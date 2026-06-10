@@ -1,0 +1,54 @@
+# ====================
+# Python
+# ====================
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+*.egg
+dist/
+build/
+eggs/
+
+# ====================
+# Virtual Environment
+# ====================
+.venv/
+venv/
+env/
+ENV/
+
+# ====================
+# Environment Variables (含敏感信息，不得上传)
+# ====================
+.env
+*.env
+!.env.example
+
+# ====================
+# IDE / Editor
+# ====================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ====================
+# OS Files
+# ====================
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ====================
+# Runtime / Uploads
+# ====================
+uploads/
+logs/
+*.log
+
+# ====================
+# Docker
+# ====================
+docker-compose.override.yml

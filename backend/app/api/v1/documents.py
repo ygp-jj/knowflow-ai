@@ -1,0 +1,128 @@
+"""文档管理 HTTP 路由。"""
+
+from io import BytesIO
+from urllib.parse import quote
+
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session
+
+from app.core.database import get_db
+from app.schemas.common import error_response, success_response
+from app.schemas.document import DocumentRead, DocumentUpdate
+from app.services.document_service import (
+    create_document,
+    delete_document,
+    get_document,
+    get_download_payload,
+    list_documents,
+    update_document,
+)
+from app.services.object_storage import get_object_storage
+
+
+router = APIRouter()
+
+
+@router.post("/create")
+async def create(
+    knowledge_base_id: int = Form(..., gt=0),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    object_storage=Depends(get_object_storage),
+):
+    """上传文件到 MinIO 并创建文档记录。"""
+
+    file_bytes = await file.read()
+    document = create_document(
+        db=db,
+        object_storage=object_storage,
+        knowledge_base_id=knowledge_base_id,
+        file_name=file.filename or "unnamed-file",
+        file_type=file.content_type or "application/octet-stream",
+        file_bytes=file_bytes,
+    )
+    if document is None:
+        return error_response(404, "知识库不存在")
+
+    data = DocumentRead.model_validate(document)
+    return success_response(data)
+
+
+@router.get("/list")
+def list_items(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
+    knowledge_base_id: int | None = Query(default=None, gt=0),
+    db: Session = Depends(get_db),
+):
+    """分页查询文档列表，可按知识库过滤。"""
+
+    items, total = list_documents(db, page, page_size, knowledge_base_id)
+    data = {
+        "items": [DocumentRead.model_validate(item) for item in items],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+    return success_response(data)
+
+
+@router.get("/detail")
+def detail(id: int = Query(..., gt=0), db: Session = Depends(get_db)):
+    """查询文档详情。"""
+
+    document = get_document(db, id)
+    if document is None:
+        return error_response(404, "文档不存在")
+
+    data = DocumentRead.model_validate(document)
+    return success_response(data)
+
+
+@router.put("/update")
+def update(payload: DocumentUpdate, db: Session = Depends(get_db)):
+    """更新文档文件名。"""
+
+    document = update_document(db, payload)
+    if document is None:
+        return error_response(404, "文档不存在")
+
+    data = DocumentRead.model_validate(document)
+    return success_response(data)
+
+
+@router.delete("/delete")
+def delete(
+    id: int = Query(..., gt=0),
+    db: Session = Depends(get_db),
+    object_storage=Depends(get_object_storage),
+):
+    """删除文档记录和对应的 MinIO 对象。"""
+
+    deleted = delete_document(db, object_storage, id)
+    if not deleted:
+        return error_response(404, "文档不存在")
+
+    return success_response()
+
+
+@router.get("/download")
+def download(
+    id: int = Query(..., gt=0),
+    db: Session = Depends(get_db),
+    object_storage=Depends(get_object_storage),
+):
+    """通过后端下载接口返回 MinIO 中的文件流。"""
+
+    document, file_payload = get_download_payload(db, object_storage, id)
+    if document is None or file_payload is None:
+        return error_response(404, "文档不存在")
+
+    safe_file_name = quote(document.file_name)
+    headers = {"Content-Disposition": f"attachment; filename*=UTF-8''{safe_file_name}"}
+    return StreamingResponse(
+        BytesIO(file_payload["bytes"]),
+        media_type=file_payload["content_type"],
+        headers=headers,
+    )

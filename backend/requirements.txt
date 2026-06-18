@@ -21,3 +21,4 @@ httpx==0.28.1
 orjson==3.10.18
 loguru==0.7.3
 openai==1.78.1
+minio==7.2.7

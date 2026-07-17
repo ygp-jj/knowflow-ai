@@ -31,7 +31,6 @@ class FakeObjectStorage:
 class DocumentsApiTests(unittest.TestCase):
     def setUp(self):
         from app.api.v1.documents import get_object_storage
-        from app.models.document import Document
         from app.models.knowledge_base import KnowledgeBase
 
         self.engine = create_engine(
@@ -42,9 +41,11 @@ class DocumentsApiTests(unittest.TestCase):
         self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
         Base.metadata.create_all(bind=self.engine)
 
+        owner_id = 101
+
         db = self.SessionLocal()
-        db.add(User(id=1, username="default", email="default@example.com", hashed_password="test"))
-        db.add(KnowledgeBase(id=1, name="默认知识库", description="测试用", owner_id=1))
+        db.add(User(id=owner_id, username="default", email="default@example.com", hashed_password="test"))
+        db.add(KnowledgeBase(id=1, name="默认知识库", description="测试用", owner_id=owner_id))
         db.commit()
         db.close()
 

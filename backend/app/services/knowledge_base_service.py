@@ -1,7 +1,7 @@
 """知识库管理业务服务。
 
 本模块封装知识库 CRUD 规则，路由层只负责调用这些函数。
-第一版按约定使用 DEFAULT_OWNER_ID 作为临时单用户归属。
+owner_id 由前端传入，不在服务层硬编码。
 """
 
 from sqlalchemy.orm import Session
@@ -11,16 +11,12 @@ from app.models.knowledge_base import KnowledgeBase
 from app.schemas.knowledge_base import KnowledgeBaseCreate, KnowledgeBaseUpdate
 
 
-# 第一版暂未接入认证，所有知识库固定归属默认用户。
-DEFAULT_OWNER_ID = 1
-
-
 def create_knowledge_base(db: Session, payload: KnowledgeBaseCreate) -> KnowledgeBase:
-    """创建归属默认用户的知识库。
+    """创建知识库。
 
     参数:
         db: 数据库会话。
-        payload: 创建请求数据，包含知识库名称和描述。
+        payload: 创建请求数据，包含知识库名称、描述和所属用户 ID。
     返回:
         已写入数据库并刷新后的 KnowledgeBase 实例。
     """
@@ -28,7 +24,7 @@ def create_knowledge_base(db: Session, payload: KnowledgeBaseCreate) -> Knowledg
     knowledge_base = KnowledgeBase(
         name=payload.name,
         description=payload.description,
-        owner_id=DEFAULT_OWNER_ID,
+        owner_id=payload.owner_id,
     )
     db.add(knowledge_base)
     db.commit()
@@ -36,18 +32,19 @@ def create_knowledge_base(db: Session, payload: KnowledgeBaseCreate) -> Knowledg
     return knowledge_base
 
 
-def list_knowledge_bases(db: Session, page: int, page_size: int) -> tuple[list[KnowledgeBase], int]:
-    """分页查询默认用户的知识库。
+def list_knowledge_bases(db: Session, owner_id: int, page: int, page_size: int) -> tuple[list[KnowledgeBase], int]:
+    """分页查询指定用户的知识库。
 
     参数:
         db: 数据库会话。
+        owner_id: 所属用户 ID。
         page: 当前页码，从 1 开始。
         page_size: 每页数量。
     返回:
         items 为当前页知识库列表，total 为符合条件的总数量。
     """
 
-    query = db.query(KnowledgeBase).filter(KnowledgeBase.owner_id == DEFAULT_OWNER_ID)
+    query = db.query(KnowledgeBase).filter(KnowledgeBase.owner_id == owner_id)
     total = query.count()
     items = (
         query.order_by(KnowledgeBase.id.desc())
@@ -58,34 +55,35 @@ def list_knowledge_bases(db: Session, page: int, page_size: int) -> tuple[list[K
     return items, total
 
 
-def get_knowledge_base(db: Session, knowledge_base_id: int) -> KnowledgeBase | None:
-    """按 ID 查询默认用户的知识库。
+def get_knowledge_base(db: Session, knowledge_base_id: int, owner_id: int) -> KnowledgeBase | None:
+    """按 ID 和所属用户查询知识库。
 
     参数:
         db: 数据库会话。
         knowledge_base_id: 知识库 ID。
+        owner_id: 所属用户 ID。
     返回:
         找到时返回 KnowledgeBase，否则返回 None。
     """
 
     return (
         db.query(KnowledgeBase)
-        .filter(KnowledgeBase.id == knowledge_base_id, KnowledgeBase.owner_id == DEFAULT_OWNER_ID)
+        .filter(KnowledgeBase.id == knowledge_base_id, KnowledgeBase.owner_id == owner_id)
         .first()
     )
 
 
 def update_knowledge_base(db: Session, payload: KnowledgeBaseUpdate) -> KnowledgeBase | None:
-    """更新默认用户的知识库。
+    """更新知识库。
 
     参数:
         db: 数据库会话。
-        payload: 更新请求数据，包含 id、name、description。
+        payload: 更新请求数据，包含 id、name、description、owner_id。
     返回:
         更新后的 KnowledgeBase；目标不存在时返回 None。
     """
 
-    knowledge_base = get_knowledge_base(db, payload.id)
+    knowledge_base = get_knowledge_base(db, payload.id, payload.owner_id)
     if knowledge_base is None:
         return None
 
@@ -109,17 +107,18 @@ def has_documents(db: Session, knowledge_base_id: int) -> bool:
     return db.query(Document.id).filter(Document.knowledge_base_id == knowledge_base_id).first() is not None
 
 
-def delete_knowledge_base(db: Session, knowledge_base_id: int) -> str:
+def delete_knowledge_base(db: Session, knowledge_base_id: int, owner_id: int) -> str:
     """删除空知识库，返回业务结果状态。
 
     参数:
         db: 数据库会话。
         knowledge_base_id: 知识库 ID。
+        owner_id: 所属用户 ID。
     返回:
         deleted 表示删除成功，not_found 表示不存在，has_documents 表示存在关联文档。
     """
 
-    knowledge_base = get_knowledge_base(db, knowledge_base_id)
+    knowledge_base = get_knowledge_base(db, knowledge_base_id, owner_id)
     if knowledge_base is None:
         return "not_found"
     if has_documents(db, knowledge_base_id):

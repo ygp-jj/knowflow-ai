@@ -2,6 +2,7 @@
 
 本模块只处理请求参数、数据库依赖注入和统一响应包装；
 具体 CRUD 业务放在 app.services.knowledge_base_service 中。
+owner_id 由前端通过请求参数传入，不再在服务层硬编码。
 """
 
 from fastapi import APIRouter, Depends, Query
@@ -27,7 +28,7 @@ def create(payload: KnowledgeBaseCreate, db: Session = Depends(get_db)):
     """创建知识库。
 
     参数:
-        payload: 创建知识库请求体，包含 name 和 description。
+        payload: 创建知识库请求体，包含 name、description、owner_id。
         db: FastAPI 注入的数据库会话。
     返回:
         统一响应结构，data 为创建后的知识库信息。
@@ -41,6 +42,7 @@ def create(payload: KnowledgeBaseCreate, db: Session = Depends(get_db)):
 
 @router.get("/list")
 def list_items(
+    owner_id: int = Query(..., gt=0, description="所属用户 ID"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=10, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -48,6 +50,7 @@ def list_items(
     """分页查询知识库列表。
 
     参数:
+        owner_id: 所属用户 ID，必填。
         page: 当前页码，从 1 开始。
         page_size: 每页数量，限制在 1 到 100 之间。
         db: FastAPI 注入的数据库会话。
@@ -55,7 +58,7 @@ def list_items(
         统一响应结构，data 包含 items、total、page、page_size。
     """
 
-    items, total = list_knowledge_bases(db, page, page_size)
+    items, total = list_knowledge_bases(db, owner_id, page, page_size)
     data = {
         "items": [KnowledgeBaseRead.model_validate(item) for item in items],
         "total": total,
@@ -66,17 +69,22 @@ def list_items(
 
 
 @router.get("/detail")
-def detail(id: int = Query(..., gt=0), db: Session = Depends(get_db)):
+def detail(
+    id: int = Query(..., gt=0),
+    owner_id: int = Query(..., gt=0, description="所属用户 ID"),
+    db: Session = Depends(get_db),
+):
     """查询知识库详情。
 
     参数:
         id: 查询参数传入的知识库 ID，不放在 URL 路径段里。
+        owner_id: 所属用户 ID。
         db: FastAPI 注入的数据库会话。
     返回:
         统一响应结构；知识库不存在时返回 code=404。
     """
 
-    knowledge_base = get_knowledge_base(db, id)
+    knowledge_base = get_knowledge_base(db, id, owner_id)
     if knowledge_base is None:
         return error_response(404, "知识库不存在")
 
@@ -89,7 +97,7 @@ def update(payload: KnowledgeBaseUpdate, db: Session = Depends(get_db)):
     """更新知识库。
 
     参数:
-        payload: 更新知识库请求体，包含 id、name、description。
+        payload: 更新知识库请求体，包含 id、name、description、owner_id。
         db: FastAPI 注入的数据库会话。
     返回:
         统一响应结构；知识库不存在时返回 code=404。
@@ -104,17 +112,22 @@ def update(payload: KnowledgeBaseUpdate, db: Session = Depends(get_db)):
 
 
 @router.delete("/delete")
-def delete(id: int = Query(..., gt=0), db: Session = Depends(get_db)):
+def delete(
+    id: int = Query(..., gt=0),
+    owner_id: int = Query(..., gt=0, description="所属用户 ID"),
+    db: Session = Depends(get_db),
+):
     """删除空知识库。
 
     参数:
         id: 查询参数传入的知识库 ID，不放在 URL 路径段里。
+        owner_id: 所属用户 ID。
         db: FastAPI 注入的数据库会话。
     返回:
         统一响应结构；存在关联文档时返回 code=400 并拒绝删除。
     """
 
-    result = delete_knowledge_base(db, id)
+    result = delete_knowledge_base(db, id, owner_id)
     if result == "not_found":
         return error_response(404, "知识库不存在")
     if result == "has_documents":

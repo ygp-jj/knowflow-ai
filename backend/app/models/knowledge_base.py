@@ -20,7 +20,7 @@ class KnowledgeBase(Base):
     name = Column(String(200), nullable=False)
     # 知识库描述，可为空。
     description = Column(Text, nullable=True)
-    # 所属用户 ID，第一版由服务层固定为 owner_id=1。
+    # 所属用户 ID，由前端通过 API 参数传入。
     owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     # 创建时间和更新时间由数据库默认值/更新逻辑维护。
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

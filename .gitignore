@@ -47,6 +47,9 @@ Desktop.ini
 uploads/
 logs/
 *.log
+.superpowers/
+frontend/node_modules/
+frontend/dist/
 
 # ====================
 # Docker

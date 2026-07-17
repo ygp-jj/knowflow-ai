@@ -1,0 +1,165 @@
+/**
+ * 功能：定义管理台全局视觉变量、页面骨架和通用布局样式。
+ */
+:root {
+  color-scheme: light;
+  --page-bg: linear-gradient(180deg, #f4f7fb 0%, #eef3f8 100%);
+  --panel-bg: rgba(255, 255, 255, 0.92);
+  --panel-border: rgba(15, 23, 42, 0.08);
+  --panel-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
+  --brand-strong: #123b66;
+  --brand-accent: #d97706;
+  --text-main: #122033;
+  --text-muted: #5a6b81;
+  --radius-lg: 24px;
+  --radius-md: 18px;
+  --radius-sm: 12px;
+  font-family: "Aptos", "Microsoft YaHei UI", "Segoe UI", sans-serif;
+  color: var(--text-main);
+  background: var(--page-bg);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: radial-gradient(circle at top right, rgba(217, 119, 6, 0.16), transparent 24%),
+    radial-gradient(circle at left center, rgba(18, 59, 102, 0.12), transparent 28%),
+    var(--page-bg);
+}
+
+#app {
+  min-height: 100vh;
+}
+
+.page-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.page-banner {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 24px 28px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, rgba(18, 59, 102, 0.98), rgba(24, 111, 160, 0.9));
+  box-shadow: var(--panel-shadow);
+  color: #f8fafc;
+}
+
+.page-banner__title {
+  margin: 0 0 8px;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.page-banner__desc {
+  margin: 0;
+  max-width: 680px;
+  color: rgba(248, 250, 252, 0.82);
+}
+
+.page-banner__meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(110px, 1fr));
+  gap: 14px;
+}
+
+.page-banner__meta-card {
+  padding: 16px 18px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+}
+
+.page-banner__meta-card label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: rgba(248, 250, 252, 0.72);
+}
+
+.page-banner__meta-card strong {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.panel-card {
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-lg);
+  background: var(--panel-bg);
+  box-shadow: var(--panel-shadow);
+}
+
+.panel-card .ant-card-body {
+  padding: 22px;
+}
+
+.toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.toolbar-row__filters,
+.toolbar-row__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.stack-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stack-cell small {
+  color: var(--text-muted);
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.detail-item {
+  padding: 16px;
+  border-radius: var(--radius-md);
+  background: rgba(241, 245, 249, 0.9);
+}
+
+.detail-item label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.detail-item strong,
+.detail-item span {
+  font-size: 15px;
+  color: var(--text-main);
+}
+
+@media (max-width: 960px) {
+  .page-banner {
+    flex-direction: column;
+  }
+
+  .page-banner__meta,
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+}

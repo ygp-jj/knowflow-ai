@@ -12,10 +12,12 @@ class KnowledgeBaseCreate(BaseModel):
     字段:
         name: 知识库名称，不能为空，最大 200 字符。
         description: 知识库描述，可为空。
+        owner_id: 所属用户 ID，由前端传入。
     """
 
     name: str = Field(..., min_length=1, max_length=200, description="知识库名称")
     description: Optional[str] = Field(default=None, description="知识库描述")
+    owner_id: int = Field(..., gt=0, description="所属用户 ID")
 
 
 class KnowledgeBaseUpdate(BaseModel):
@@ -25,11 +27,13 @@ class KnowledgeBaseUpdate(BaseModel):
         id: 请求体传入的知识库 ID。
         name: 更新后的知识库名称。
         description: 更新后的知识库描述，可为空。
+        owner_id: 所属用户 ID，用于校验所有权。
     """
 
     id: int = Field(..., gt=0, description="知识库 ID")
     name: str = Field(..., min_length=1, max_length=200, description="知识库名称")
     description: Optional[str] = Field(default=None, description="知识库描述")
+    owner_id: int = Field(..., gt=0, description="所属用户 ID")
 
 
 class KnowledgeBaseRead(BaseModel):
@@ -39,7 +43,7 @@ class KnowledgeBaseRead(BaseModel):
         id: 知识库 ID。
         name: 知识库名称。
         description: 知识库描述。
-        owner_id: 所属用户 ID，第一版固定为 1。
+        owner_id: 所属用户 ID，由前端显式传入。
         created_at: 创建时间。
         updated_at: 更新时间。
     """

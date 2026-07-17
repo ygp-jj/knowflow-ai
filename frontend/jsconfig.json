@@ -1,0 +1,14 @@
+// 功能：为前端源码提供路径别名和编辑器智能提示配置。
+{
+  "compilerOptions": {
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ]
+    }
+  },
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
+}

@@ -56,15 +56,15 @@ function handleClick() {
 
 ## 后端知识库管理接口约定
 
-- 第一版知识库管理采用临时单用户模式，所有知识库固定归属 `owner_id=1`，暂不接入认证。
+- 第一版知识库管理的 `owner_id` 由前端显式传入，便于联调测试，并为后续登录态接入预留扩展空间。
 - 知识库管理第一版只实现基础 CRUD：创建、分页列表、详情、修改、删除。
 - 知识库接口不要把业务 `id` 写在 URL 路径段里，详情和删除用查询参数传入 `id`，修改用请求体传入 `id`。
 - 知识库接口路径固定为：
   - `POST /api/v1/knowledge-bases/create`
-  - `GET /api/v1/knowledge-bases/list?page=1&page_size=10`
-  - `GET /api/v1/knowledge-bases/detail?id=1`
+  - `GET /api/v1/knowledge-bases/list?owner_id=<owner_id>&page=1&page_size=10`
+  - `GET /api/v1/knowledge-bases/detail?id=1&owner_id=<owner_id>`
   - `PUT /api/v1/knowledge-bases/update`
-  - `DELETE /api/v1/knowledge-bases/delete?id=1`
+  - `DELETE /api/v1/knowledge-bases/delete?id=1&owner_id=<owner_id>`
 - 知识库接口统一响应格式为 `{ "code": 0, "message": "success", "data": ... }`，错误时 `data` 返回 `null`。
 - 知识库列表必须分页，返回 `items`、`total`、`page`、`page_size`。
 - 删除知识库前必须检查是否存在关联文档；如果存在文档，接口返回错误，不执行删除。

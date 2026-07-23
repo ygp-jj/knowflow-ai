@@ -17,7 +17,7 @@
       </div>
       <div class="detail-item">
         <label>文件类型</label>
-        <span>{{ detail.file_type }}</span>
+        <span>{{ formatFileType(detail.file_type, detail.file_name) }}</span>
       </div>
       <div class="detail-item">
         <label>文件大小</label>
@@ -51,7 +51,7 @@
 <script setup>
 /** 功能：展示文档详情、状态、大小和错误信息抽屉。 */
 import DocumentStatusTag from './DocumentStatusTag.vue';
-import { formatDateTime, formatFileSize } from '@/utils/formatters';
+import { formatDateTime, formatFileSize, formatFileType } from '@/utils/formatters';
 
 defineProps({
   open: {

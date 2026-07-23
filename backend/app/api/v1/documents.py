@@ -34,13 +34,16 @@ async def create(
     """上传文件到 MinIO 并创建文档记录。"""
 
     file_bytes = await file.read()
+    file_name = file.filename or "unnamed-file"
+    # MIME 仅用于对象存储；业务 file_type 由服务层从文件名扩展名解析。
+    content_type = file.content_type or "application/octet-stream"
     document = create_document(
         db=db,
         object_storage=object_storage,
         knowledge_base_id=knowledge_base_id,
-        file_name=file.filename or "unnamed-file",
-        file_type=file.content_type or "application/octet-stream",
+        file_name=file_name,
         file_bytes=file_bytes,
+        content_type=content_type,
     )
     if document is None:
         return error_response(404, "知识库不存在")

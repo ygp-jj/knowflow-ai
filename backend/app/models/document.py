@@ -20,7 +20,7 @@ class Document(Base):
     knowledge_base_id = Column(Integer, ForeignKey("knowledge_bases.id", ondelete="CASCADE"), nullable=False, index=True)
     # 文档基础元数据，创建接口会从上传文件中填充。
     file_name = Column(String(255), nullable=False)
-    # MIME 类型可能很长（如 Office Open XML），需预留足够长度。
+    # 业务文件类型存短扩展名（如 xlsx/pdf），不再存完整 MIME。
     file_type = Column(String(255), nullable=False)
     file_path = Column(String(1024), nullable=False)
     file_size = Column(Integer, nullable=False)

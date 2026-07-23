@@ -78,6 +78,10 @@
             {{ resolveKnowledgeBaseName(record.knowledge_base_id) }}
           </template>
 
+          <template v-else-if="column.key === 'file_type'">
+            {{ formatFileType(record.file_type, record.file_name) }}
+          </template>
+
           <template v-else-if="column.key === 'file_size'">
             {{ formatFileSize(record.file_size) }}
           </template>
@@ -153,7 +157,7 @@ import {
 } from '@/services/document-service';
 import { fetchKnowledgeBaseList } from '@/services/knowledge-base-service';
 import { normalizeErrorMessage } from '@/utils/api';
-import { formatDateTime, formatFileSize } from '@/utils/formatters';
+import { formatDateTime, formatFileSize, formatFileType } from '@/utils/formatters';
 
 /** MVP 阶段默认归属用户 ID。 */
 

@@ -94,7 +94,7 @@ class DocumentsApiTests(unittest.TestCase):
 
         detail_response = self.client.get(f"/api/v1/documents/detail?id={document_id}")
         self.assertEqual(detail_response.status_code, 200)
-        self.assertEqual(detail_response.json()["data"]["file_type"], "application/pdf")
+        self.assertEqual(detail_response.json()["data"]["file_type"], "pdf")
 
         update_response = self.client.put(
             "/api/v1/documents/update",
@@ -124,7 +124,7 @@ class DocumentsApiTests(unittest.TestCase):
         self.assertEqual(response.json(), {"code": 404, "message": "知识库不存在", "data": None})
 
     def test_create_document_accepts_long_office_mime_type(self):
-        """Office Open XML MIME 超过 50 字符，应能正常入库。"""
+        """Office Open XML MIME 超过 50 字符，业务 file_type 应存为短扩展名。"""
 
         excel_mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         self.assertGreater(len(excel_mime), 50)
@@ -144,8 +144,11 @@ class DocumentsApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertEqual(body["code"], 0)
-        self.assertEqual(body["data"]["file_type"], excel_mime)
+        self.assertEqual(body["data"]["file_type"], "xlsx")
         self.assertEqual(body["data"]["file_name"], "20260722134501-活跃用户弹窗.xlsx")
+        # MinIO 仍应收到原始 MIME，保证对象 Content-Type 正确。
+        uploaded_object = next(iter(self.fake_storage.objects.values()))
+        self.assertEqual(uploaded_object["content_type"], excel_mime)
 
 
 if __name__ == "__main__":

@@ -96,7 +96,7 @@ python scripts\create_neon_tables.py
 执行完成后，终端会输出：
 
 ```text
-KnowFlow 数据库表创建完成。
+SQL 执行完成。
 ```
 
 ### 可选参数
@@ -107,6 +107,18 @@ KnowFlow 数据库表创建完成。
 cd D:\ygp-wx\AIProjects\knowflow-ai\backend
 python scripts\create_neon_tables.py --sql-file scripts\neon-create-knowflow-tables.sql --env-file .env
 ```
+
+### 扩容 documents.file_type（已有库升级）
+
+上传 Excel / Word / PPT（Office Open XML）时，MIME 类型会超过旧的 `VARCHAR(50)`，导致入库失败。
+已有 Neon 库请执行：
+
+```powershell
+cd D:\ygp-wx\AIProjects\knowflow-ai\backend
+python scripts\create_neon_tables.py --sql-file scripts\neon-alter-documents-file-type.sql
+```
+
+也可在 Neon SQL Editor 中直接执行 `scripts/neon-alter-documents-file-type.sql`。
 
 ## 推荐使用方式
 

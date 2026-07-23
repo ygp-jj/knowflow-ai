@@ -123,6 +123,30 @@ class DocumentsApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"code": 404, "message": "知识库不存在", "data": None})
 
+    def test_create_document_accepts_long_office_mime_type(self):
+        """Office Open XML MIME 超过 50 字符，应能正常入库。"""
+
+        excel_mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        self.assertGreater(len(excel_mime), 50)
+
+        response = self.client.post(
+            "/api/v1/documents/create",
+            data={"knowledge_base_id": "1"},
+            files={
+                "file": (
+                    "20260722134501-活跃用户弹窗.xlsx",
+                    io.BytesIO(b"excel-content"),
+                    excel_mime,
+                )
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["code"], 0)
+        self.assertEqual(body["data"]["file_type"], excel_mime)
+        self.assertEqual(body["data"]["file_name"], "20260722134501-活跃用户弹窗.xlsx")
+
 
 if __name__ == "__main__":
     unittest.main()

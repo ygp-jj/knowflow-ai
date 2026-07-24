@@ -25,7 +25,8 @@
 4. **默认参数**：`chunk_size=256`，`chunk_overlap=50`；可通过环境变量 `CHUNK_SIZE` / `CHUNK_OVERLAP` 覆盖。
 5. **可配置**：后续支持按知识库/文档覆盖切分参数（当前实现为全局配置）。
 
-实现入口：`backend/app/services/text_splitter.py` 的 `split_pages_to_chunks`。
+实现入口：`backend/app/services/text_splitter.py` 的 `split_pages_to_chunks`
+（兼容别名 `split_text`，行为相同）。
 
 ---
 

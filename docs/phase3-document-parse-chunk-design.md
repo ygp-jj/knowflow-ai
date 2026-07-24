@@ -128,7 +128,7 @@ Worker:
 | Celery App | `backend/app/tasks/celery_app.py` | broker/backend、队列路由 |
 | 文档任务 | `backend/app/tasks/document_tasks.py` | `process_document` 状态机编排 |
 | 解析服务 | `backend/app/services/document_parser.py` | PDF/DOCX/TXT/MD → pages |
-| 切片服务 | `backend/app/services/text_splitter.py` | pages → chunks |
+| 切片服务 | `backend/app/services/text_splitter.py` | `split_pages_to_chunks(pages)` → chunks |
 | Chunk 模型 | `backend/app/models/chunk.py` | ORM |
 | Chunk 服务 | `backend/app/services/chunk_service.py`（建议新增） | 清理/批量写入/列表查询 |
 | Token 估算 | `backend/app/services/token_service.py` | 写 `token_count`（可用字符近似或 tiktoken） |

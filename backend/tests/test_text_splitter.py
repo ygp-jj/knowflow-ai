@@ -1,11 +1,16 @@
 """文本切片服务单测。
 
-覆盖：默认 256/50、页内滑动窗口、跨页全局序号、空页跳过。
+覆盖：默认 256/50、页内滑动窗口、跨页全局序号、空页跳过、兼容别名。
 """
 
 import unittest
 
-from app.services.text_splitter import DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE, split_text
+from app.services.text_splitter import (
+    DEFAULT_CHUNK_OVERLAP,
+    DEFAULT_CHUNK_SIZE,
+    split_pages_to_chunks,
+    split_text,
+)
 
 
 class TextSplitterTests(unittest.TestCase):
@@ -19,7 +24,7 @@ class TextSplitterTests(unittest.TestCase):
         """短于窗口的文本应只产出一块，且 chunk_index 从 0 开始。"""
 
         pages = [{"page_number": None, "content": "短文本"}]
-        chunks = split_text(pages, chunk_size=256, chunk_overlap=50)
+        chunks = split_pages_to_chunks(pages, chunk_size=256, chunk_overlap=50)
 
         self.assertEqual(len(chunks), 1)
         self.assertEqual(chunks[0]["chunk_index"], 0)
@@ -32,7 +37,7 @@ class TextSplitterTests(unittest.TestCase):
             {"page_number": 1, "content": "a" * 20},
             {"page_number": 2, "content": "b" * 15},
         ]
-        chunks = split_text(pages, chunk_size=10, chunk_overlap=2)
+        chunks = split_pages_to_chunks(pages, chunk_size=10, chunk_overlap=2)
 
         self.assertGreaterEqual(len(chunks), 3)
         self.assertEqual(chunks[0]["page_number"], 1)
@@ -46,7 +51,7 @@ class TextSplitterTests(unittest.TestCase):
             {"page_number": 1, "content": "   "},
             {"page_number": 2, "content": "有效内容"},
         ]
-        chunks = split_text(pages, chunk_size=256, chunk_overlap=50)
+        chunks = split_pages_to_chunks(pages, chunk_size=256, chunk_overlap=50)
         self.assertEqual(len(chunks), 1)
         self.assertEqual(chunks[0]["page_number"], 2)
 
@@ -54,13 +59,22 @@ class TextSplitterTests(unittest.TestCase):
         """页内滑动窗口示例：chunk_size=8、overlap=3 时步进为 5。"""
 
         pages = [{"page_number": 1, "content": "ABCDEFGHIJKLMNOPQRSTUVWXYZ"}]
-        chunks = split_text(pages, chunk_size=8, chunk_overlap=3)
+        chunks = split_pages_to_chunks(pages, chunk_size=8, chunk_overlap=3)
 
         self.assertEqual(
             [item["content"] for item in chunks],
             ["ABCDEFGH", "FGHIJKLM", "KLMNOPQR", "PQRSTUVW", "UVWXYZ"],
         )
         self.assertEqual([item["chunk_index"] for item in chunks], [0, 1, 2, 3, 4])
+
+    def test_split_text_alias_matches_formal_api(self):
+        """兼容别名 split_text 应与正式入口行为一致。"""
+
+        pages = [{"page_number": 1, "content": "abcdefghij"}]
+        formal = split_pages_to_chunks(pages, chunk_size=4, chunk_overlap=1)
+        alias = split_text(pages, chunk_size=4, chunk_overlap=1)
+        self.assertEqual(formal, alias)
+        self.assertIs(split_text, split_pages_to_chunks)
 
 
 if __name__ == "__main__":

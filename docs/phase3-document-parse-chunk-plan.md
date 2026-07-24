@@ -77,7 +77,7 @@
 - Modify: `backend/app/services/text_splitter.py`
 - Create: `backend/tests/test_text_splitter.py`
 
-- [ ] 实现 `split_text(pages, chunk_size=256, chunk_overlap=50)`（可用环境变量覆盖）
+- [ ] 实现 `split_pages_to_chunks(pages, chunk_size=256, chunk_overlap=50)`（可用环境变量覆盖；兼容别名 `split_text`）
 - [ ] 保留 `page_number`；生成有序 `chunk_index`（可由上层赋值）
 - [ ] 空页跳过；全空结果由上层判失败
 - [ ] 单测：短文本、跨 overlap、多页

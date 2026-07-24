@@ -11,7 +11,7 @@ from app.services.chunk_service import replace_document_chunks
 from app.services.document_parser import UnsupportedDocumentTypeError, parse_document
 from app.services.document_service import get_document
 from app.services.object_storage import get_object_storage
-from app.services.text_splitter import split_text
+from app.services.text_splitter import split_pages_to_chunks
 from app.tasks.celery_app import celery_app
 
 
@@ -70,7 +70,7 @@ def run_process_document(document_id: int, object_storage=None) -> dict:
         pages = parse_document(temp_path)
 
         _update_document_status(db, document, STATUS_CHUNKING)
-        chunks = split_text(pages)
+        chunks = split_pages_to_chunks(pages)
         if not chunks:
             raise ValueError("文档无有效文本，无法切片")
 

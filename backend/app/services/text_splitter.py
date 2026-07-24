@@ -4,6 +4,10 @@
 1. 默认 chunk_size=256、chunk_overlap=50，面向内部知识库精准问答。
 2. 可通过环境变量 CHUNK_SIZE / CHUNK_OVERLAP（或 Settings）覆盖默认值。
 3. 按「页内滑动窗口」切分，不是一页一块；空页跳过；chunk_index 从 0 全局递增。
+
+对外入口：
+- ``split_pages_to_chunks``：正式 API 名（与约束文档一致）
+- ``split_text``：兼容别名，行为与正式入口相同
 """
 
 from __future__ import annotations
@@ -29,12 +33,12 @@ DEFAULT_CHUNK_SIZE = 256
 DEFAULT_CHUNK_OVERLAP = 50
 
 
-def split_text(
+def split_pages_to_chunks(
     pages: list[dict],
     chunk_size: int | None = None,
     chunk_overlap: int | None = None,
 ) -> list[dict]:
-    """将解析后的页列表切成文本块。
+    """将解析后的页列表按页内滑动窗口切成文本块。
 
     参数:
         pages: 页列表，每项形如 ``{"page_number": int|None, "content": str}``。
@@ -43,13 +47,13 @@ def split_text(
 
     返回:
         切片列表，每项形如 ``{"content", "page_number", "chunk_index"}``；
-        ``chunk_index`` 从 0 起按产出顺序全局递增。
+        ``chunk_index`` 从 0 起按产出顺序全局递增（跨页连续）。
 
     异常:
         ValueError: 参数非法（大小 <= 0、overlap 为负、或 overlap >= chunk_size）。
     """
 
-    # 未显式传入时，回落到配置/模块默认值。
+    # 未显式传入时，回落到配置 / 模块默认值。
     if chunk_size is None or chunk_overlap is None:
         default_size, default_overlap = _resolve_chunk_defaults()
         if chunk_size is None:
@@ -97,3 +101,7 @@ def split_text(
             start = end - chunk_overlap
 
     return chunks
+
+
+# 兼容旧调用名；新代码请优先使用 split_pages_to_chunks。
+split_text = split_pages_to_chunks

@@ -1,7 +1,7 @@
 # 第 3 阶段：文档解析与切片 — 使用说明（方案 A）
 
-> 设计：[document-parse-chunk-design](../../docs/superpowers/specs/2026-07-23-document-parse-chunk-design.md)  
-> 实现计划：[document-parse-chunk plan](../../docs/superpowers/plans/2026-07-23-document-parse-chunk.md)
+> 设计：[phase3-document-parse-chunk-design.md](./phase3-document-parse-chunk-design.md)  
+> 实现计划：[phase3-document-parse-chunk-plan.md](./phase3-document-parse-chunk-plan.md)
 
 ## 1. 阶段目标
 
@@ -55,7 +55,7 @@ cd backend
 python scripts\create_neon_tables.py --sql-file scripts\neon-alter-document-status-chunked.sql
 ```
 
-（脚本在 Task 1 实现时落地。）
+若曾执行过旧版建表脚本且枚举无 `chunked`，务必先跑上述 ALTER，再启动 Worker。
 
 ### 3.3 启动 Worker
 

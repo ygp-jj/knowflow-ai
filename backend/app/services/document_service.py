@@ -143,3 +143,18 @@ def get_download_payload(db: Session, object_storage, document_id: int):
 
     file_payload = object_storage.download_file(document.file_path)
     return document, file_payload
+
+
+def enqueue_document_processing(document_id: int) -> str | None:
+    """投递文档解析切片任务，返回 Celery task_id。
+
+    Redis 不可用时返回 None，文档保持 uploaded，待运维恢复后可手动重试。
+    """
+
+    try:
+        from app.tasks.document_tasks import process_document
+
+        async_result = process_document.delay(document_id)
+        return async_result.id
+    except Exception:
+        return None

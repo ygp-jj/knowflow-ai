@@ -1,5 +1,8 @@
+"""文档管理接口单测。"""
+
 import io
 import unittest
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -8,6 +11,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base, get_db
 from app.main import app
+from app.models.chunk import DocumentChunk  # noqa: F401
 from app.models.user import User
 
 
@@ -50,6 +54,11 @@ class DocumentsApiTests(unittest.TestCase):
         db.close()
 
         self.fake_storage = FakeObjectStorage()
+        self.enqueue_patcher = patch(
+            "app.api.v1.documents.enqueue_document_processing",
+            return_value="fake-task-id",
+        )
+        self.mock_enqueue = self.enqueue_patcher.start()
 
         def override_get_db():
             db = self.SessionLocal()
@@ -66,6 +75,7 @@ class DocumentsApiTests(unittest.TestCase):
         self.client = TestClient(app)
 
     def tearDown(self):
+        self.enqueue_patcher.stop()
         app.dependency_overrides.clear()
         Base.metadata.drop_all(bind=self.engine)
 
@@ -83,6 +93,8 @@ class DocumentsApiTests(unittest.TestCase):
         self.assertEqual(create_body["data"]["knowledge_base_id"], 1)
         self.assertEqual(create_body["data"]["file_name"], "product.pdf")
         self.assertEqual(create_body["data"]["status"], "uploaded")
+        self.assertEqual(create_body["data"]["task_id"], "fake-task-id")
+        self.mock_enqueue.assert_called_once()
         document_id = create_body["data"]["id"]
 
         list_response = self.client.get("/api/v1/documents/list?page=1&page_size=10&knowledge_base_id=1")
@@ -122,6 +134,7 @@ class DocumentsApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"code": 404, "message": "知识库不存在", "data": None})
+        self.mock_enqueue.assert_not_called()
 
     def test_create_document_accepts_long_office_mime_type(self):
         """Office Open XML MIME 超过 50 字符，业务 file_type 应存为短扩展名。"""
@@ -146,9 +159,38 @@ class DocumentsApiTests(unittest.TestCase):
         self.assertEqual(body["code"], 0)
         self.assertEqual(body["data"]["file_type"], "xlsx")
         self.assertEqual(body["data"]["file_name"], "20260722134501-活跃用户弹窗.xlsx")
-        # MinIO 仍应收到原始 MIME，保证对象 Content-Type 正确。
         uploaded_object = next(iter(self.fake_storage.objects.values()))
         self.assertEqual(uploaded_object["content_type"], excel_mime)
+
+    def test_list_document_chunks(self):
+        create_response = self.client.post(
+            "/api/v1/documents/create",
+            data={"knowledge_base_id": "1"},
+            files={"file": ("manual.txt", io.BytesIO(b"hello"), "text/plain")},
+        )
+        document_id = create_response.json()["data"]["id"]
+
+        db = self.SessionLocal()
+        db.add(
+            DocumentChunk(
+                document_id=document_id,
+                knowledge_base_id=1,
+                chunk_index=0,
+                content="hello chunk",
+                content_hash="abc",
+                page_number=None,
+                token_count=11,
+            )
+        )
+        db.commit()
+        db.close()
+
+        response = self.client.get(f"/api/v1/documents/chunks?document_id={document_id}&page=1&page_size=10")
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["code"], 0)
+        self.assertEqual(body["data"]["total"], 1)
+        self.assertEqual(body["data"]["items"][0]["content"], "hello chunk")
 
 
 if __name__ == "__main__":

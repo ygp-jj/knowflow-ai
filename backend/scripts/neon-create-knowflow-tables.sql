@@ -25,6 +25,7 @@ BEGIN
             'uploaded',
             'parsing',
             'chunking',
+            'chunked',
             'embedding',
             'indexed',
             'failed'

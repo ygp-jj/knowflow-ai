@@ -8,7 +8,7 @@
 
 **Tech Stack:** FastAPI, SQLAlchemy, Celery, Redis, MinIO, pypdf, python-docx, Vue3
 
-**设计依据:** [2026-07-23-document-parse-chunk-design.md](../specs/2026-07-23-document-parse-chunk-design.md)
+**设计依据:** [phase3-document-parse-chunk-design.md](./phase3-document-parse-chunk-design.md)
 
 **终态约定（方案 A）:** 成功 = `chunked`（已切片）；`embedding` / `indexed` 留给第 4 阶段。
 
@@ -25,7 +25,7 @@
 | 5 | Celery 基建与 `process_document` | Task 2–4 | Worker 可跑通主流程 |
 | 6 | 上传投递 + chunks 列表接口 | Task 5 | API 契约与接口测试 |
 | 7 | 前端轮询与状态展示 | Task 1, 6 | DocumentPage 体验 |
-| 8 | 使用文档与联调验收 | Task 6–7 | `backend/docs` 说明 |
+| 8 | 使用文档与联调验收 | Task 6–7 | `docs/` 说明 |
 
 建议并行：Task 2 与 Task 3 可并行；Task 1 需尽早完成供后续依赖。
 
@@ -188,7 +188,7 @@ celery -A app.tasks.celery_app.celery_app worker -Q documents --loglevel=info
 ### Task 8: 使用文档与联调清单
 
 **Files:**
-- Create/Update: `backend/docs/document-parse-chunk-phase3-usage.md`
+- Create/Update: `docs/phase3-document-parse-chunk-usage.md`
 - Modify: `AGENTS.md`（第 3 阶段接口与状态约定）
 - Optional: `README.md` 增加 Worker 启动一节
 

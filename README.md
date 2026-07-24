@@ -210,15 +210,23 @@ VITE_API_BASE_URL=https://api.example.com
 6. 启动 Vue 前端
 7. 打开 `http://127.0.0.1:5173`，联调知识库管理页和文档管理页
 8. 在文档管理页上传文件后，可去 `http://127.0.0.1:9001` 查看 MinIO 对象是否已写入
+9. 另开终端启动 Celery Worker，观察文档状态变为「已切片」：
+
+```bash
+cd backend
+celery -A app.tasks.celery_app.celery_app worker -Q documents --loglevel=info
+```
+
+第 3 阶段说明见：`docs/phase3-document-parse-chunk-usage.md`
 
 ### 9. 当前版本哪些服务可以先不启动
 
-如果你当前只验证“知识库管理 + 文档管理”页面，可以先不启动：
+如果你当前只验证“知识库 CRUD + 文档上传下载”，可以先不启动：
 
-- Celery worker
-- 文档解析异步任务
+- Celery worker（不启动则文档会停在 `uploaded`，不会自动解析切片）
+- Milvus（第 4 阶段才需要）
 
-原因是当前仓库里的异步任务链路还没有完整接通，但这不影响你使用现有的知识库 CRUD 和文档上传/列表/下载/删除功能。
+若要验证第 3 阶段「解析 + 切片」，则必须启动 Redis 与 Celery Worker。
 
 ---
 

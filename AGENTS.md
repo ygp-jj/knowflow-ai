@@ -80,6 +80,7 @@ function handleClick() {
   - `PUT /api/v1/documents/update`
   - `DELETE /api/v1/documents/delete?id=1`
   - `GET /api/v1/documents/download?id=1`
+  - `GET /api/v1/documents/chunks?document_id=1&page=1&page_size=10`
 - 文档列表支持可选 `knowledge_base_id` 过滤，并返回分页结构 `items`、`total`、`page`、`page_size`。
 - 文档统一响应格式为 `{ "code": 0, "message": "success", "data": ... }`，错误时 `data` 返回 `null`。
 - 文档文件在开发阶段直接存入本地 Docker 启动的 MinIO。
@@ -97,6 +98,6 @@ function handleClick() {
 - 本阶段支持解析：PDF / DOCX / TXT / Markdown；不支持类型任务失败。
 - 推荐补充接口：`GET /api/v1/documents/chunks?document_id=<id>&page=1&page_size=10`。
 - 详细设计与任务拆分见：
-  - `docs/superpowers/specs/2026-07-23-document-parse-chunk-design.md`
-  - `docs/superpowers/plans/2026-07-23-document-parse-chunk.md`
-  - `backend/docs/document-parse-chunk-phase3-usage.md`
+  - `docs/phase3-document-parse-chunk-design.md`
+  - `docs/phase3-document-parse-chunk-plan.md`
+  - `docs/phase3-document-parse-chunk-usage.md`

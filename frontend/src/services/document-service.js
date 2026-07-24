@@ -93,3 +93,21 @@ export async function downloadDocument(id) {
 
   return response.data;
 }
+
+/**
+ * 分页获取文档切片列表。
+ * @param {{ documentId: number, page?: number, pageSize?: number }} filters 查询条件。
+ * @returns {Promise<{ items: any[], total: number, page: number, page_size: number }>}
+ */
+export async function fetchDocumentChunks(filters) {
+  /** 切片列表响应对象。 */
+  const response = await httpClient.get('/documents/chunks', {
+    params: {
+      document_id: filters.documentId,
+      page: filters.page || 1,
+      page_size: filters.pageSize || 10,
+    },
+  });
+
+  return unwrapApiResponse(response.data);
+}

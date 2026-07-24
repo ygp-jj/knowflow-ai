@@ -148,7 +148,7 @@ def get_download_payload(db: Session, object_storage, document_id: int):
 def enqueue_document_processing(document_id: int) -> str | None:
     """投递文档解析切片任务，返回 Celery task_id。
 
-    Redis 不可用时返回 None，文档保持 uploaded，待运维恢复后可手动重试。
+    Redis 不可用时返回 None。
     """
 
     try:
@@ -158,3 +158,34 @@ def enqueue_document_processing(document_id: int) -> str | None:
         return async_result.id
     except Exception:
         return None
+
+
+# 允许手动触发切片的状态：待解析、失败可重试、已切片可重切。
+CHUNKABLE_STATUSES = {"uploaded", "failed", "chunked"}
+# 正在处理中的状态，禁止重复投递。
+PROCESSING_STATUSES = {"parsing", "chunking", "embedding"}
+
+
+def start_document_chunking(db: Session, document_id: int) -> tuple[Document | None, str | None, str | None]:
+    """手动触发文档解析切片。
+
+    返回:
+        (document, task_id, error_message)
+        成功时 error_message 为 None；失败时 document 可能仍有值。
+    """
+
+    document = get_document(db, document_id)
+    if document is None:
+        return None, None, "文档不存在"
+
+    if document.status in PROCESSING_STATUSES:
+        return document, None, "文档正在处理中，请稍后再试"
+
+    if document.status not in CHUNKABLE_STATUSES:
+        return document, None, f"当前状态「{document.status}」不可切片"
+
+    task_id = enqueue_document_processing(document.id)
+    if task_id is None:
+        return document, None, "切片任务投递失败，请检查 Redis 与 Celery Worker"
+
+    return document, task_id, None

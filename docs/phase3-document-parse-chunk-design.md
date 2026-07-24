@@ -104,19 +104,21 @@ POST /api/v1/documents/create
   ↓
 校验知识库 → 上传 MinIO → 写 documents(status=uploaded)
   ↓
+立即返回（不投递任务）
+  ↓
+用户点击「切片」
+  ↓
+POST /api/v1/documents/chunk { id }
+  ↓
 投递 Celery: process_document(document_id)
   ↓
-立即返回 { document, task_id? }
-  ↓
 Worker:
-  1. status = parsing
-  2. MinIO 下载 → parse_document
-  3. status = chunking
-  4. split_text → 写 document_chunks
-  5. 更新 chunk_count，status = chunked
-  失败则 status = failed，写 error_message
+  1. status = parsing → 下载并解析
+  2. status = chunking → 切片
+  3. 写 document_chunks → status = chunked
+  失败则 status = failed
   ↓
-前端轮询 detail/list，直至 chunked 或 failed
+用户手动「刷新」列表查看结果（不做自动轮询）
 ```
 
 ## 6. 模块划分

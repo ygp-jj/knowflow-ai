@@ -111,3 +111,15 @@ export async function fetchDocumentChunks(filters) {
 
   return unwrapApiResponse(response.data);
 }
+
+/**
+ * 手动触发文档解析切片。
+ * @param {number} id 文档 ID。
+ * @returns {Promise<any>}
+ */
+export async function chunkDocument(id) {
+  /** 触发切片响应对象。 */
+  const response = await httpClient.post('/documents/chunk', { id });
+
+  return unwrapApiResponse(response.data);
+}

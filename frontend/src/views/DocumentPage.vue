@@ -4,7 +4,7 @@
       <div>
         <h2 class="page-banner__title">文档管理</h2>
         <p class="page-banner__desc">
-          统一管理知识库下的文档上传、状态查看、详情浏览、切片预览、重命名、下载和删除操作。
+          统一管理知识库下的文档上传、手动切片、状态查看、详情浏览、切片预览、重命名、下载和删除。
         </p>
       </div>
       <div class="page-banner__meta">
@@ -107,10 +107,11 @@
               <AButton type="link" @click="openDetailDrawer(record)">详情</AButton>
               <AButton
                 type="link"
-                :disabled="!canViewChunks(record)"
-                @click="openDetailDrawer(record)"
+                :disabled="!canStartChunk(record) || Boolean(chunkingIds[record.id])"
+                :loading="Boolean(chunkingIds[record.id])"
+                @click="handleChunk(record)"
               >
-                切片
+                {{ getChunkActionLabel(record) }}
               </AButton>
               <AButton type="link" @click="openRenameModal(record)">重命名</AButton>
               <AButton type="link" @click="handleDownload(record)">下载</AButton>
@@ -148,8 +149,8 @@
 </template>
 
 <script setup>
-/** 功能：承载文档管理页面的筛选、上传、详情、下载、重命名和删除交互。 */
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+/** 功能：承载文档管理页面的筛选、上传、手动切片、详情、下载、重命名和删除交互。 */
+import { computed, onMounted, ref } from 'vue';
 import { Modal, message } from 'ant-design-vue';
 import { ReloadOutlined, UploadOutlined } from '@ant-design/icons-vue';
 
@@ -159,6 +160,7 @@ import DocumentStatusTag from '@/components/DocumentStatusTag.vue';
 import DocumentUploadModal from '@/components/DocumentUploadModal.vue';
 import { DEFAULT_OWNER_ID } from '@/constants/app';
 import {
+  chunkDocument,
   createDocument,
   deleteDocument,
   downloadDocument,
@@ -168,13 +170,7 @@ import {
 } from '@/services/document-service';
 import { fetchKnowledgeBaseList } from '@/services/knowledge-base-service';
 import { normalizeErrorMessage } from '@/utils/api';
-import { isDocumentActivePollStatus } from '@/utils/document-status';
 import { formatDateTime, formatFileSize, formatFileType } from '@/utils/formatters';
-
-/** 文档状态轮询间隔（毫秒）。 */
-const DOCUMENT_POLL_INTERVAL_MS = 2500;
-/** 上传/手动刷新后，对 uploaded 状态的最长轮询窗口（毫秒）。 */
-const UPLOADED_POLL_GRACE_MS = 90 * 1000;
 
 /** 文档表格列定义。 */
 const columns = [
@@ -186,7 +182,7 @@ const columns = [
   { title: '切片数', dataIndex: 'chunk_count', key: 'chunk_count', width: 90 },
   { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 170 },
   { title: '更新时间', dataIndex: 'updated_at', key: 'updated_at', width: 170 },
-  { title: '操作', key: 'actions', width: 320, fixed: 'right' },
+  { title: '操作', key: 'actions', width: 360, fixed: 'right' },
 ];
 
 /** 当前页文档列表。 */
@@ -221,10 +217,8 @@ const renameSubmitting = ref(false);
 const detailVisible = ref(false);
 /** 当前重命名对象。 */
 const renamingRecord = ref(null);
-/** 文档状态轮询定时器。 */
-const pollTimer = ref(null);
-/** 允许轮询 uploaded 的截止时间（时间戳）。 */
-const pollUploadedDeadline = ref(0);
+/** 正在触发切片的文档 ID 集合。 */
+const chunkingIds = ref({});
 
 /** 分页配置对象。 */
 const pagination = computed(() => ({
@@ -257,79 +251,6 @@ onMounted(async () => {
   }
 });
 
-onUnmounted(() => {
-  stopDocumentPolling();
-});
-
-/**
- * 停止文档状态轮询。
- * @returns {void}
- */
-function stopDocumentPolling() {
-  if (pollTimer.value) {
-    clearInterval(pollTimer.value);
-    pollTimer.value = null;
-  }
-}
-
-/**
- * 开启一段时间的 uploaded 轮询窗口（上传成功或手动刷新后调用）。
- * @returns {void}
- */
-function openUploadedPollGrace() {
-  pollUploadedDeadline.value = Date.now() + UPLOADED_POLL_GRACE_MS;
-}
-
-/**
- * 判断当前是否还应继续轮询。
- * parsing/chunking/embedding：持续轮询直到结束。
- * uploaded：仅在宽限窗口内轮询，避免 Worker 未启动时无限请求。
- * @returns {boolean}
- */
-function shouldContinuePolling() {
-  /** 是否存在后台正在执行中的文档。 */
-  const hasActive = items.value.some((item) => isDocumentActivePollStatus(item.status));
-  if (hasActive) {
-    return true;
-  }
-
-  /** 是否存在仍在待解析、且处于宽限窗口内的文档。 */
-  const hasUploadedInGrace =
-    Date.now() < pollUploadedDeadline.value &&
-    items.value.some((item) => item.status === 'uploaded');
-
-  return hasUploadedInGrace;
-}
-
-/**
- * 根据列表状态启动或停止轮询。
- * @returns {void}
- */
-function syncDocumentPolling() {
-  /** 是否仍需轮询。 */
-  const shouldPoll = shouldContinuePolling();
-
-  if (shouldPoll && !pollTimer.value) {
-    pollTimer.value = setInterval(async () => {
-      try {
-        await loadDocumentList({
-          page: page.value,
-          pageSize: pageSize.value,
-          knowledgeBaseId: selectedKnowledgeBaseId.value,
-          silent: true,
-        });
-      } catch (error) {
-        message.error(normalizeErrorMessage(error));
-        stopDocumentPolling();
-      }
-    }, DOCUMENT_POLL_INTERVAL_MS);
-  }
-
-  if (!shouldPoll) {
-    stopDocumentPolling();
-  }
-}
-
 /**
  * 加载知识库下拉选项。
  * @returns {Promise<void>}
@@ -353,13 +274,11 @@ async function loadKnowledgeBaseOptions() {
 
 /**
  * 加载文档分页列表。
- * @param {{ page?: number, pageSize?: number, knowledgeBaseId?: number | null, silent?: boolean }} filters 查询条件。
+ * @param {{ page?: number, pageSize?: number, knowledgeBaseId?: number | null }} filters 查询条件。
  * @returns {Promise<void>}
  */
 async function loadDocumentList(filters = {}) {
-  if (!filters.silent) {
-    listLoading.value = true;
-  }
+  listLoading.value = true;
 
   try {
     /** 当前请求参数。 */
@@ -377,11 +296,8 @@ async function loadDocumentList(filters = {}) {
     total.value = result.total || 0;
     page.value = result.page || params.page;
     pageSize.value = result.page_size || params.pageSize;
-    syncDocumentPolling();
   } finally {
-    if (!filters.silent) {
-      listLoading.value = false;
-    }
+    listLoading.value = false;
   }
 }
 
@@ -402,8 +318,6 @@ function resolveKnowledgeBaseName(id) {
  */
 async function handleRefresh() {
   try {
-    // 手动刷新时短暂允许轮询 uploaded，便于 Worker 已启动后看到状态推进。
-    openUploadedPollGrace();
     await loadDocumentList({
       page: page.value,
       pageSize: pageSize.value,
@@ -472,14 +386,12 @@ async function handleUpload(payload) {
     });
     uploadVisible.value = false;
     selectedKnowledgeBaseId.value = payload.knowledgeBaseId;
-    // 上传后开启 uploaded 轮询窗口，等待 Worker 接手并推进状态。
-    openUploadedPollGrace();
     await loadDocumentList({
       page: 1,
       pageSize: pageSize.value,
       knowledgeBaseId: payload.knowledgeBaseId,
     });
-    message.success('文档上传成功，正在后台解析切片');
+    message.success('文档上传成功，请点击「切片」开始解析');
   } catch (error) {
     message.error(normalizeErrorMessage(error));
   } finally {
@@ -534,14 +446,61 @@ async function handleRename(payload) {
 }
 
 /**
- * 是否可查看切片。
+ * 是否允许手动触发切片。
  * @param {any} record 文档记录。
  * @returns {boolean}
  */
-function canViewChunks(record) {
-  /** 切片数量。 */
-  const chunkCount = Number(record?.chunk_count || 0);
-  return chunkCount > 0 || ['chunked', 'embedding', 'indexed'].includes(record?.status);
+function canStartChunk(record) {
+  return ['uploaded', 'failed', 'chunked'].includes(record?.status);
+}
+
+/**
+ * 切片按钮文案。
+ * @param {any} record 文档记录。
+ * @returns {string}
+ */
+function getChunkActionLabel(record) {
+  if (record?.status === 'chunked') {
+    return '重新切片';
+  }
+  if (['parsing', 'chunking', 'embedding'].includes(record?.status)) {
+    return '切片中';
+  }
+  return '切片';
+}
+
+/**
+ * 手动触发文档切片（不轮询列表，完成后请点刷新查看状态）。
+ * @param {any} record 当前文档记录。
+ * @returns {Promise<void>}
+ */
+async function handleChunk(record) {
+  if (!canStartChunk(record)) {
+    message.warning('当前状态不可切片');
+    return;
+  }
+
+  chunkingIds.value = {
+    ...chunkingIds.value,
+    [record.id]: true,
+  };
+
+  try {
+    await chunkDocument(record.id);
+    message.success('切片任务已提交，请稍后点击「刷新」查看结果');
+    await loadDocumentList({
+      page: page.value,
+      pageSize: pageSize.value,
+      knowledgeBaseId: selectedKnowledgeBaseId.value,
+    });
+  } catch (error) {
+    message.error(normalizeErrorMessage(error));
+  } finally {
+    /** 复制一份 loading 映射后移除当前文档。 */
+    const nextChunkingIds = { ...chunkingIds.value };
+    delete nextChunkingIds[record.id];
+    chunkingIds.value = nextChunkingIds;
+  }
 }
 
 /**

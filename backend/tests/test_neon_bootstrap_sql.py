@@ -91,6 +91,7 @@ class NeonBootstrapSqlTests(unittest.TestCase):
 
                     self.assertEqual(actual_enums, expected_enums)
                 finally:
+                    cur.execute("RESET search_path")
                     cur.execute(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE')
 
 

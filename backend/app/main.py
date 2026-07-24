@@ -1,8 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
+from app.models.user import User as _User  # Register the users table for ORM foreign keys.
 # 导入各个业务模块的路由
 from app.api.v1 import documents, chat, knowledge_bases, prompts, models, evaluations
+
+
 
 
 

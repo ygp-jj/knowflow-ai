@@ -65,6 +65,7 @@ class NeonSeedDataTests(unittest.TestCase):
                     )
                     self.assertEqual(cur.fetchone()[0], 4)
                 finally:
+                    cur.execute("RESET search_path")
                     cur.execute(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE')
 
 

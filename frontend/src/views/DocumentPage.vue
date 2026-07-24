@@ -4,7 +4,7 @@
       <div>
         <h2 class="page-banner__title">文档管理</h2>
         <p class="page-banner__desc">
-          统一管理知识库下的文档上传、状态查看、详情浏览、重命名、下载和删除操作。
+          统一管理知识库下的文档上传、状态查看、详情浏览、切片预览、重命名、下载和删除操作。
         </p>
       </div>
       <div class="page-banner__meta">
@@ -105,6 +105,13 @@
           <template v-else-if="column.key === 'actions'">
             <ASpace wrap>
               <AButton type="link" @click="openDetailDrawer(record)">详情</AButton>
+              <AButton
+                type="link"
+                :disabled="!canViewChunks(record)"
+                @click="openDetailDrawer(record)"
+              >
+                切片
+              </AButton>
               <AButton type="link" @click="openRenameModal(record)">重命名</AButton>
               <AButton type="link" @click="handleDownload(record)">下载</AButton>
               <AButton danger type="link" @click="handleDelete(record)">删除</AButton>
@@ -177,7 +184,7 @@ const columns = [
   { title: '切片数', dataIndex: 'chunk_count', key: 'chunk_count', width: 90 },
   { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 170 },
   { title: '更新时间', dataIndex: 'updated_at', key: 'updated_at', width: 170 },
-  { title: '操作', key: 'actions', width: 260, fixed: 'right' },
+  { title: '操作', key: 'actions', width: 320, fixed: 'right' },
 ];
 
 /** 当前页文档列表。 */
@@ -487,6 +494,17 @@ async function handleRename(payload) {
   } finally {
     renameSubmitting.value = false;
   }
+}
+
+/**
+ * 是否可查看切片。
+ * @param {any} record 文档记录。
+ * @returns {boolean}
+ */
+function canViewChunks(record) {
+  /** 切片数量。 */
+  const chunkCount = Number(record?.chunk_count || 0);
+  return chunkCount > 0 || ['chunked', 'embedding', 'indexed'].includes(record?.status);
 }
 
 /**

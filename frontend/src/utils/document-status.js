@@ -33,7 +33,13 @@ const DOCUMENT_STATUS_META = {
   },
 };
 
-/** 仍需轮询的处理中状态。 */
+/**
+ * 后台正在执行中的状态（应持续轮询）。
+ * 不含 uploaded：仅「待解析」时若 Worker 未启动会永久卡住，避免无限请求。
+ */
+export const DOCUMENT_ACTIVE_POLL_STATUSES = ['parsing', 'chunking', 'embedding'];
+
+/** 广义处理中状态（含待解析），用于展示判断。 */
 export const DOCUMENT_PENDING_STATUSES = ['uploaded', 'parsing', 'chunking', 'embedding'];
 
 /** 可停止轮询的终态。 */
@@ -54,10 +60,19 @@ export function getDocumentStatusMeta(status) {
 }
 
 /**
- * 判断文档是否仍在异步处理中。
+ * 判断文档是否仍在异步处理中（含待解析）。
  * @param {string} status 文档状态值。
  * @returns {boolean}
  */
 export function isDocumentPendingStatus(status) {
   return DOCUMENT_PENDING_STATUSES.includes(status);
+}
+
+/**
+ * 判断文档是否处于后台正在执行的状态（应持续轮询）。
+ * @param {string} status 文档状态值。
+ * @returns {boolean}
+ */
+export function isDocumentActivePollStatus(status) {
+  return DOCUMENT_ACTIVE_POLL_STATUSES.includes(status);
 }

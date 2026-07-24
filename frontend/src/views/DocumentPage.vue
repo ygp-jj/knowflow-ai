@@ -573,10 +573,20 @@ function handleDelete(record) {
  * @returns {Promise<void>}
  */
 async function handleTableChange(pager) {
+  /** 目标页码。 */
+  const nextPage = pager.current;
+  /** 目标分页大小。 */
+  const nextPageSize = pager.pageSize;
+
+  // 分页配置回写后 Table 可能再次触发 change，页码未变则跳过，避免重复请求。
+  if (nextPage === page.value && nextPageSize === pageSize.value) {
+    return;
+  }
+
   try {
     await loadDocumentList({
-      page: pager.current,
-      pageSize: pager.pageSize,
+      page: nextPage,
+      pageSize: nextPageSize,
       knowledgeBaseId: selectedKnowledgeBaseId.value,
     });
   } catch (error) {

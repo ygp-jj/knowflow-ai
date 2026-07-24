@@ -89,7 +89,7 @@ def run_process_document(document_id: int, object_storage=None) -> dict:
 
         # 5. 状态流转：开始文本切片（把大段文字切成小段，便于 AI 检索）
         _update_document_status(db, document, STATUS_CHUNKING)
-        chunks = split_text(pages)  # 调用切分算法（按段落/按长度/按语义）
+        chunks = split_pages_to_chunks(pages)  # 页内滑动窗口切分，写入 document_chunks
 
         # 如果没有切出任何文本块，视为无效文档
         if not chunks:

@@ -355,10 +355,20 @@ function handleDelete(record) {
  * @returns {Promise<void>}
  */
 async function handleTableChange(pager) {
+  /** 目标页码。 */
+  const nextPage = pager.current;
+  /** 目标分页大小。 */
+  const nextPageSize = pager.pageSize;
+
+  // Ant Design Vue 在分页对象更新后可能再次触发 change，若页码未变则跳过，避免死循环请求。
+  if (nextPage === page.value && nextPageSize === pageSize.value) {
+    return;
+  }
+
   try {
     await loadKnowledgeBaseList({
-      page: pager.current,
-      pageSize: pager.pageSize,
+      page: nextPage,
+      pageSize: nextPageSize,
     });
   } catch (error) {
     message.error(normalizeErrorMessage(error));

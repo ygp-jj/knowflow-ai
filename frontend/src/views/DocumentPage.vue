@@ -168,11 +168,13 @@ import {
 } from '@/services/document-service';
 import { fetchKnowledgeBaseList } from '@/services/knowledge-base-service';
 import { normalizeErrorMessage } from '@/utils/api';
-import { isDocumentPendingStatus } from '@/utils/document-status';
+import { isDocumentActivePollStatus } from '@/utils/document-status';
 import { formatDateTime, formatFileSize, formatFileType } from '@/utils/formatters';
 
 /** 文档状态轮询间隔（毫秒）。 */
 const DOCUMENT_POLL_INTERVAL_MS = 2500;
+/** 上传/手动刷新后，对 uploaded 状态的最长轮询窗口（毫秒）。 */
+const UPLOADED_POLL_GRACE_MS = 90 * 1000;
 
 /** 文档表格列定义。 */
 const columns = [
@@ -221,6 +223,8 @@ const detailVisible = ref(false);
 const renamingRecord = ref(null);
 /** 文档状态轮询定时器。 */
 const pollTimer = ref(null);
+/** 允许轮询 uploaded 的截止时间（时间戳）。 */
+const pollUploadedDeadline = ref(0);
 
 /** 分页配置对象。 */
 const pagination = computed(() => ({
@@ -269,14 +273,43 @@ function stopDocumentPolling() {
 }
 
 /**
- * 根据列表是否存在处理中文档，启动或停止轮询。
+ * 开启一段时间的 uploaded 轮询窗口（上传成功或手动刷新后调用）。
+ * @returns {void}
+ */
+function openUploadedPollGrace() {
+  pollUploadedDeadline.value = Date.now() + UPLOADED_POLL_GRACE_MS;
+}
+
+/**
+ * 判断当前是否还应继续轮询。
+ * parsing/chunking/embedding：持续轮询直到结束。
+ * uploaded：仅在宽限窗口内轮询，避免 Worker 未启动时无限请求。
+ * @returns {boolean}
+ */
+function shouldContinuePolling() {
+  /** 是否存在后台正在执行中的文档。 */
+  const hasActive = items.value.some((item) => isDocumentActivePollStatus(item.status));
+  if (hasActive) {
+    return true;
+  }
+
+  /** 是否存在仍在待解析、且处于宽限窗口内的文档。 */
+  const hasUploadedInGrace =
+    Date.now() < pollUploadedDeadline.value &&
+    items.value.some((item) => item.status === 'uploaded');
+
+  return hasUploadedInGrace;
+}
+
+/**
+ * 根据列表状态启动或停止轮询。
  * @returns {void}
  */
 function syncDocumentPolling() {
-  /** 当前页是否仍有处理中文档。 */
-  const hasPending = items.value.some((item) => isDocumentPendingStatus(item.status));
+  /** 是否仍需轮询。 */
+  const shouldPoll = shouldContinuePolling();
 
-  if (hasPending && !pollTimer.value) {
+  if (shouldPoll && !pollTimer.value) {
     pollTimer.value = setInterval(async () => {
       try {
         await loadDocumentList({
@@ -292,7 +325,7 @@ function syncDocumentPolling() {
     }, DOCUMENT_POLL_INTERVAL_MS);
   }
 
-  if (!hasPending) {
+  if (!shouldPoll) {
     stopDocumentPolling();
   }
 }
@@ -369,6 +402,8 @@ function resolveKnowledgeBaseName(id) {
  */
 async function handleRefresh() {
   try {
+    // 手动刷新时短暂允许轮询 uploaded，便于 Worker 已启动后看到状态推进。
+    openUploadedPollGrace();
     await loadDocumentList({
       page: page.value,
       pageSize: pageSize.value,
@@ -437,6 +472,8 @@ async function handleUpload(payload) {
     });
     uploadVisible.value = false;
     selectedKnowledgeBaseId.value = payload.knowledgeBaseId;
+    // 上传后开启 uploaded 轮询窗口，等待 Worker 接手并推进状态。
+    openUploadedPollGrace();
     await loadDocumentList({
       page: 1,
       pageSize: pageSize.value,

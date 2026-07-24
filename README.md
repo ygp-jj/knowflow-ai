@@ -214,7 +214,8 @@ VITE_API_BASE_URL=https://api.example.com
 
 ```bash
 cd backend
-celery -A app.tasks.celery_app.celery_app worker -Q documents --loglevel=info
+# Windows 请加 --pool=solo，否则可能报「拒绝访问」
+celery -A app.tasks.celery_app.celery_app worker -Q documents --pool=solo --loglevel=info
 ```
 
 第 3 阶段说明见：`docs/phase3-document-parse-chunk-usage.md`

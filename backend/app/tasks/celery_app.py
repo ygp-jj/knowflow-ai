@@ -1,5 +1,7 @@
 """Celery 应用配置。"""
 
+import sys
+
 from celery import Celery
 
 from app.core.config import settings
@@ -12,6 +14,9 @@ celery_app = Celery(
     include=["app.tasks.document_tasks"],
 )
 
+# Windows 不支持 prefork 进程池，默认改用 solo，避免 PermissionError / 句柄无效。
+_worker_pool = "solo" if sys.platform.startswith("win") else "prefork"
+
 celery_app.conf.update(
     task_serializer="json",
     accept_content=["json"],
@@ -19,6 +24,7 @@ celery_app.conf.update(
     timezone="UTC",
     enable_utc=True,
     task_track_started=True,
+    worker_pool=_worker_pool,
     task_routes={
         "app.tasks.document_tasks.process_document": {"queue": "documents"},
     },

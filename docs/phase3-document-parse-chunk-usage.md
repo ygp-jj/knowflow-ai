@@ -64,10 +64,24 @@ python scripts\create_neon_tables.py --sql-file scripts\neon-alter-document-stat
 ```bash
 cd backend
 # 确保 .env 中 REDIS / DATABASE / MinIO 配置正确
+```
+
+**Windows（PowerShell）推荐：**
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+celery -A app.tasks.celery_app.celery_app worker -Q documents --pool=solo --loglevel=info
+```
+
+> Windows 必须加 `--pool=solo`（或 `threads`）。默认 prefork 会报「拒绝访问 / 句柄无效」。
+
+**Linux / macOS：**
+
+```bash
 celery -A app.tasks.celery_app.celery_app worker -Q documents --loglevel=info
 ```
 
-未启动 Worker 时：文档会一直停在 `uploaded`。
+未启动 Worker 时：点击切片后任务会堆积，文档状态不会推进。
 
 ### 3.4 启动 API / 前端
 

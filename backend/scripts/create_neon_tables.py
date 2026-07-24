@@ -76,7 +76,7 @@ def main() -> None:
         return
 
     run_sql(database_url, args.sql_file)
-    print("KnowFlow 数据库表创建完成。")
+    print("SQL 执行完成。")
 
 
 if __name__ == "__main__":

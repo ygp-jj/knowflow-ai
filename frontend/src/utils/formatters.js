@@ -4,6 +4,21 @@
 /** 文件大小单位列表。 */
 const FILE_SIZE_UNITS = ['B', 'KB', 'MB', 'GB'];
 
+/** 常见 MIME 到短扩展名的映射，兼容历史脏数据。 */
+const MIME_TO_EXTENSION = {
+  'application/pdf': 'pdf',
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.ms-powerpoint': 'ppt',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+  'text/plain': 'txt',
+  'text/markdown': 'md',
+  'application/json': 'json',
+  'text/csv': 'csv',
+};
+
 /**
  * 格式化文件大小。
  * @param {number} fileSize 文件字节数。
@@ -29,6 +44,39 @@ export function formatFileSize(fileSize) {
   }
 
   return `${displayValue.toFixed(1)} ${FILE_SIZE_UNITS[unitIndex]}`;
+}
+
+/**
+ * 格式化文件类型为短扩展名展示。
+ * @param {string | null | undefined} fileType 后端返回的 file_type。
+ * @param {string | null | undefined} fileName 可选文件名，用于兜底解析扩展名。
+ * @returns {string}
+ */
+export function formatFileType(fileType, fileName) {
+  /** 规范化后的类型字符串。 */
+  const normalizedType = typeof fileType === 'string' ? fileType.trim().toLowerCase() : '';
+
+  if (normalizedType) {
+    if (!normalizedType.includes('/')) {
+      return normalizedType.replace(/^\./, '');
+    }
+
+    /** MIME 映射命中的短扩展名。 */
+    const mappedExtension = MIME_TO_EXTENSION[normalizedType];
+    if (mappedExtension) {
+      return mappedExtension;
+    }
+  }
+
+  if (typeof fileName === 'string' && fileName.includes('.')) {
+    /** 从文件名截取的扩展名。 */
+    const extension = fileName.split('.').pop()?.trim().toLowerCase();
+    if (extension) {
+      return extension;
+    }
+  }
+
+  return normalizedType || '--';
 }
 
 /**

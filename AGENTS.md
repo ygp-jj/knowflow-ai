@@ -80,8 +80,24 @@ function handleClick() {
   - `PUT /api/v1/documents/update`
   - `DELETE /api/v1/documents/delete?id=1`
   - `GET /api/v1/documents/download?id=1`
+  - `GET /api/v1/documents/chunks?document_id=1&page=1&page_size=10`
 - 文档列表支持可选 `knowledge_base_id` 过滤，并返回分页结构 `items`、`total`、`page`、`page_size`。
 - 文档统一响应格式为 `{ "code": 0, "message": "success", "data": ... }`，错误时 `data` 返回 `null`。
 - 文档文件在开发阶段直接存入本地 Docker 启动的 MinIO。
 - 删除文档时必须同时删除数据库记录和 MinIO 对象。
 - 下载文档时通过后端下载接口返回文件流，不直接暴露 MinIO 真实对象地址。
+
+## 后端文档解析与切片约定（第 3 阶段 / 方案 A）
+
+- 上传成功后由 Celery 异步解析与切片，HTTP 接口立即返回，不等待处理完成。
+- 本阶段成功终态为 `chunked`（已切片，待向量化）；**不要**在本阶段写入 Milvus，也**不要**将成功状态标为 `indexed`。
+- 文档状态流转：`uploaded → parsing → chunking → chunked`；失败为 `failed` 并写入 `error_message`。
+- `embedding` / `indexed` 留给第 4 阶段：`chunked → embedding → indexed`。
+- 切片结果写入 `document_chunks`，并更新 `documents.chunk_count`；`vector_id` 本阶段保持为空。
+- MVP 切片参数：`chunk_size=800`，`chunk_overlap=120`（字符）。
+- 本阶段支持解析：PDF / DOCX / TXT / Markdown；不支持类型任务失败。
+- 推荐补充接口：`GET /api/v1/documents/chunks?document_id=<id>&page=1&page_size=10`。
+- 详细设计与任务拆分见：
+  - `docs/phase3-document-parse-chunk-design.md`
+  - `docs/phase3-document-parse-chunk-plan.md`
+  - `docs/phase3-document-parse-chunk-usage.md`

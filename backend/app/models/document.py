@@ -20,7 +20,8 @@ class Document(Base):
     knowledge_base_id = Column(Integer, ForeignKey("knowledge_bases.id", ondelete="CASCADE"), nullable=False, index=True)
     # 文档基础元数据，创建接口会从上传文件中填充。
     file_name = Column(String(255), nullable=False)
-    file_type = Column(String(50), nullable=False)
+    # 业务文件类型存短扩展名（如 xlsx/pdf），不再存完整 MIME。
+    file_type = Column(String(255), nullable=False)
     file_path = Column(String(1024), nullable=False)
     file_size = Column(Integer, nullable=False)
     # 当前保持字符串状态，便于与 SQLite 测试环境兼容。

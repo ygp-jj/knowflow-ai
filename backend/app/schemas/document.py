@@ -33,3 +33,22 @@ class DocumentRead(BaseModel):
     chunk_count: int
     created_at: datetime
     updated_at: datetime
+
+
+class DocumentCreateRead(DocumentRead):
+    """文档创建响应，附带可选 Celery task_id。"""
+
+    task_id: Optional[str] = None
+
+
+class DocumentChunkRead(BaseModel):
+    """文档切片响应数据。"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    document_id: int
+    chunk_index: int
+    content: str
+    page_number: Optional[int]
+    token_count: int

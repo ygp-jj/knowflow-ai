@@ -9,10 +9,12 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.schemas.common import error_response, success_response
-from app.schemas.document import DocumentRead, DocumentUpdate
+from app.schemas.document import DocumentChunkRead, DocumentCreateRead, DocumentRead, DocumentUpdate
+from app.services.chunk_service import list_chunks
 from app.services.document_service import (
     create_document,
     delete_document,
+    enqueue_document_processing,
     get_document,
     get_download_payload,
     list_documents,
@@ -31,21 +33,26 @@ async def create(
     db: Session = Depends(get_db),
     object_storage=Depends(get_object_storage),
 ):
-    """上传文件到 MinIO 并创建文档记录。"""
+    """上传文件到 MinIO、创建文档记录，并投递解析切片任务。"""
 
     file_bytes = await file.read()
+    file_name = file.filename or "unnamed-file"
+    # MIME 仅用于对象存储；业务 file_type 由服务层从文件名扩展名解析。
+    content_type = file.content_type or "application/octet-stream"
     document = create_document(
         db=db,
         object_storage=object_storage,
         knowledge_base_id=knowledge_base_id,
-        file_name=file.filename or "unnamed-file",
-        file_type=file.content_type or "application/octet-stream",
+        file_name=file_name,
         file_bytes=file_bytes,
+        content_type=content_type,
     )
     if document is None:
         return error_response(404, "知识库不存在")
 
-    data = DocumentRead.model_validate(document)
+    task_id = enqueue_document_processing(document.id)
+    data = DocumentCreateRead.model_validate(document)
+    data.task_id = task_id
     return success_response(data)
 
 
@@ -77,6 +84,29 @@ def detail(id: int = Query(..., gt=0), db: Session = Depends(get_db)):
         return error_response(404, "文档不存在")
 
     data = DocumentRead.model_validate(document)
+    return success_response(data)
+
+
+@router.get("/chunks")
+def chunks(
+    document_id: int = Query(..., gt=0),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    """分页查询文档切片列表。"""
+
+    document = get_document(db, document_id)
+    if document is None:
+        return error_response(404, "文档不存在")
+
+    items, total = list_chunks(db, document_id, page, page_size)
+    data = {
+        "items": [DocumentChunkRead.model_validate(item) for item in items],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
     return success_response(data)
 
 

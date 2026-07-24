@@ -78,12 +78,20 @@
             {{ resolveKnowledgeBaseName(record.knowledge_base_id) }}
           </template>
 
+          <template v-else-if="column.key === 'file_type'">
+            {{ formatFileType(record.file_type, record.file_name) }}
+          </template>
+
           <template v-else-if="column.key === 'file_size'">
             {{ formatFileSize(record.file_size) }}
           </template>
 
           <template v-else-if="column.key === 'status'">
             <DocumentStatusTag :status="record.status" />
+          </template>
+
+          <template v-else-if="column.key === 'chunk_count'">
+            {{ record.chunk_count ?? 0 }}
           </template>
 
           <template v-else-if="column.key === 'created_at'">
@@ -134,7 +142,7 @@
 
 <script setup>
 /** 功能：承载文档管理页面的筛选、上传、详情、下载、重命名和删除交互。 */
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { Modal, message } from 'ant-design-vue';
 import { ReloadOutlined, UploadOutlined } from '@ant-design/icons-vue';
 
@@ -153,17 +161,20 @@ import {
 } from '@/services/document-service';
 import { fetchKnowledgeBaseList } from '@/services/knowledge-base-service';
 import { normalizeErrorMessage } from '@/utils/api';
-import { formatDateTime, formatFileSize } from '@/utils/formatters';
+import { isDocumentPendingStatus } from '@/utils/document-status';
+import { formatDateTime, formatFileSize, formatFileType } from '@/utils/formatters';
 
-/** MVP 阶段默认归属用户 ID。 */
+/** 文档状态轮询间隔（毫秒）。 */
+const DOCUMENT_POLL_INTERVAL_MS = 2500;
 
 /** 文档表格列定义。 */
 const columns = [
   { title: '文档名称', dataIndex: 'file_name', key: 'file_name', width: 240 },
   { title: '所属知识库', dataIndex: 'knowledge_base_id', key: 'knowledge_base_id', width: 180 },
-  { title: '文件类型', dataIndex: 'file_type', key: 'file_type', width: 150 },
+  { title: '文件类型', dataIndex: 'file_type', key: 'file_type', width: 120 },
   { title: '文件大小', dataIndex: 'file_size', key: 'file_size', width: 120 },
   { title: '状态', dataIndex: 'status', key: 'status', width: 120 },
+  { title: '切片数', dataIndex: 'chunk_count', key: 'chunk_count', width: 90 },
   { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 170 },
   { title: '更新时间', dataIndex: 'updated_at', key: 'updated_at', width: 170 },
   { title: '操作', key: 'actions', width: 260, fixed: 'right' },
@@ -201,6 +212,8 @@ const renameSubmitting = ref(false);
 const detailVisible = ref(false);
 /** 当前重命名对象。 */
 const renamingRecord = ref(null);
+/** 文档状态轮询定时器。 */
+const pollTimer = ref(null);
 
 /** 分页配置对象。 */
 const pagination = computed(() => ({
@@ -233,6 +246,50 @@ onMounted(async () => {
   }
 });
 
+onUnmounted(() => {
+  stopDocumentPolling();
+});
+
+/**
+ * 停止文档状态轮询。
+ * @returns {void}
+ */
+function stopDocumentPolling() {
+  if (pollTimer.value) {
+    clearInterval(pollTimer.value);
+    pollTimer.value = null;
+  }
+}
+
+/**
+ * 根据列表是否存在处理中文档，启动或停止轮询。
+ * @returns {void}
+ */
+function syncDocumentPolling() {
+  /** 当前页是否仍有处理中文档。 */
+  const hasPending = items.value.some((item) => isDocumentPendingStatus(item.status));
+
+  if (hasPending && !pollTimer.value) {
+    pollTimer.value = setInterval(async () => {
+      try {
+        await loadDocumentList({
+          page: page.value,
+          pageSize: pageSize.value,
+          knowledgeBaseId: selectedKnowledgeBaseId.value,
+          silent: true,
+        });
+      } catch (error) {
+        message.error(normalizeErrorMessage(error));
+        stopDocumentPolling();
+      }
+    }, DOCUMENT_POLL_INTERVAL_MS);
+  }
+
+  if (!hasPending) {
+    stopDocumentPolling();
+  }
+}
+
 /**
  * 加载知识库下拉选项。
  * @returns {Promise<void>}
@@ -256,11 +313,13 @@ async function loadKnowledgeBaseOptions() {
 
 /**
  * 加载文档分页列表。
- * @param {{ page?: number, pageSize?: number, knowledgeBaseId?: number | null }} filters 查询条件。
+ * @param {{ page?: number, pageSize?: number, knowledgeBaseId?: number | null, silent?: boolean }} filters 查询条件。
  * @returns {Promise<void>}
  */
 async function loadDocumentList(filters = {}) {
-  listLoading.value = true;
+  if (!filters.silent) {
+    listLoading.value = true;
+  }
 
   try {
     /** 当前请求参数。 */
@@ -278,8 +337,11 @@ async function loadDocumentList(filters = {}) {
     total.value = result.total || 0;
     page.value = result.page || params.page;
     pageSize.value = result.page_size || params.pageSize;
+    syncDocumentPolling();
   } finally {
-    listLoading.value = false;
+    if (!filters.silent) {
+      listLoading.value = false;
+    }
   }
 }
 
@@ -373,7 +435,7 @@ async function handleUpload(payload) {
       pageSize: pageSize.value,
       knowledgeBaseId: payload.knowledgeBaseId,
     });
-    message.success('文档上传成功');
+    message.success('文档上传成功，正在后台解析切片');
   } catch (error) {
     message.error(normalizeErrorMessage(error));
   } finally {

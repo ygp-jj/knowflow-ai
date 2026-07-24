@@ -157,7 +157,7 @@ const canLoadChunks = computed(() => {
   const status = props.detail.status;
   /** 后端记录的切片数。 */
   const chunkCount = Number(props.detail.chunk_count || 0);
-  return chunkCount > 0 || ['chunked', 'embedding', 'indexed'].includes(status);
+  return chunkCount > 0 || ['chunked', 'embedding', 'embedded'].includes(status);
 });
 
 watch(

@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     rag_score_threshold: float = 0.3          # 相似度阈值，低于此分数会被过滤
     rag_max_context_chars: int = 8000         # 拼接给 LLM 的最大字符数
 
+    # ========== 文本切片参数（精准问答场景默认 256/50） ==========
+    chunk_size: int = 256                     # 单块最大字符数
+    chunk_overlap: int = 50                   # 相邻块重叠字符数
+
     # ========== MinIO 对象存储 ==========
     minio_endpoint: str = "localhost:9000"    # MinIO 服务地址
     minio_access_key: str = "minioadmin"      # MinIO 访问账号

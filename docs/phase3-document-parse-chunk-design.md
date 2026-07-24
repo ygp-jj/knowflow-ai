@@ -4,7 +4,7 @@
 
 第 2 阶段已完成知识库 CRUD 与文档上传（MinIO + `documents` 落库，初始状态 `uploaded`）。
 
-第 3 阶段目标：上传后**异步**完成文档解析与文本切片，将 chunk 写入 PostgreSQL，并驱动文档状态流转；前端可轮询看到状态变化与切片数量。
+第 3 阶段目标：上传后**异步**完成文档解析与文本切片，将 chunk 写入 PostgreSQL，并驱动文档状态流转；前端不轮询；用户手动刷新查看状态与切片数量。
 
 **本阶段不包含**：Embedding、Milvus 入库、RAG 问答（属第 4 / 5 阶段）。
 
@@ -13,9 +13,9 @@
 | 项目 | 约定 |
 |------|------|
 | 成功终态 | `chunked`（已切片，待向量化） |
-| 第 4 阶段起点 | `chunked → embedding → indexed` |
+| 第 4 阶段起点 | `chunked → embedding → embedded` |
 | 硬验收 | `document_chunks` 有记录，且 `documents.chunk_count` 与条数一致 |
-| 不提前标 `indexed` | 避免「已入库」但实际无向量的语义混淆 |
+| 不提前标 `embedded` | 避免「已入库」但实际无向量的语义混淆 |
 
 ### 状态机（本阶段）
 
@@ -27,11 +27,11 @@ uploaded → parsing → chunking → chunked
 完整生命周期（含后续阶段）：
 
 ```text
-uploaded → parsing → chunking → chunked → embedding → indexed
+uploaded → parsing → chunking → chunked → embedding → embedded
                  ↘ failed ↙              ↘ failed ↙
 ```
 
-> 说明：现有 `document_status_enum` 无 `chunked`，本阶段需新增枚举值，并同步 ORM / 前端状态映射。
+> 说明：枚举需含 `chunked`；第 4 阶段终态统一为 `embedded`（不再使用 `indexed`）。
 
 ## 3. 范围
 
@@ -40,10 +40,10 @@ uploaded → parsing → chunking → chunked → embedding → indexed
 1. Celery + Redis 异步任务基建
 2. 从 MinIO 下载文件到可解析输入
 3. 文档解析：PDF / DOCX / TXT / Markdown
-4. 文本切片：`chunk_size=800`，`chunk_overlap=120`（字符级）
+4. 文本切片：`chunk_size=256`，`chunk_overlap=50`（字符级）
 5. `document_chunks` 落库与 `chunk_count` 更新
-6. 上传成功后投递 `process_document` 任务
-7. 前端状态轮询 + `chunked` / `failed` 展示
+6. 手动触发切片后投递 `process_document` 任务（上传不自动切片）
+7. 前端状态展示（无轮询）+ 手动刷新 + `chunked` / `failed` 展示
 8. 可选但推荐：按文档查询 chunk 列表接口（联调验收）
 
 ### 3.2 明确不做
@@ -68,7 +68,7 @@ uploaded → parsing → chunking → chunked → embedding → indexed
 | chunking | 切片中 | geekblue |
 | chunked | 已切片 | cyan |
 | embedding | 向量化中 | purple |
-| indexed | 已入库 | success |
+| embedded | 已完成（向量化） | success |
 | failed | 失败 | error |
 
 ### 4.2 document_chunks
@@ -134,8 +134,8 @@ Worker:
 | Token 估算 | `backend/app/services/token_service.py` | 写 `token_count`（可用字符近似或 tiktoken） |
 | 对象存储 | `backend/app/services/object_storage.py` | 补充下载到临时文件（若需要） |
 | 文档接口 | `backend/app/api/v1/documents.py` | 创建后投递任务；可选 chunks 列表 |
-| 前端状态 | `frontend/src/utils/document-status.js` | 补 `chunked`/`embedding` |
-| 前端轮询 | `frontend/src/views/DocumentPage.vue` | 列表/详情轮询 |
+| 前端状态 | `frontend/src/utils/document-status.js` | 补 `chunked`/`embedding`/`embedded` |
+| 前端状态展示 | `frontend/src/views/DocumentPage.vue` | 手动刷新；无轮询 |
 
 ## 7. 接口约定（延续现有风格）
 
@@ -145,7 +145,7 @@ Worker:
 |------|------|------|
 | POST | `/api/v1/documents/create` | 上传后投递任务；`data` 含文档信息，可选 `task_id` |
 | GET | `/api/v1/documents/detail?id=` | 返回 `status` / `chunk_count` / `error_message` |
-| GET | `/api/v1/documents/list?...` | 同上字段，供轮询 |
+| GET | `/api/v1/documents/list?...` | 同上字段，供手动刷新查看 |
 | GET | `/api/v1/documents/chunks?document_id=&page=&page_size=` | **本阶段新增（推荐）**：分页查看切片 |
 
 ### create 响应补充（建议）
@@ -212,8 +212,8 @@ Worker:
 ### 8.2 切片参数（MVP）
 
 ```text
-chunk_size = 800
-chunk_overlap = 120
+chunk_size = 256
+chunk_overlap = 50
 ```
 
 - 空内容：`failed`，提示「文档无有效文本」
@@ -229,7 +229,7 @@ chunk_overlap = 120
 | 解析异常 / 下载失败 | 任务内 `failed` + error_message |
 | 切片结果为空 | 任务内 `failed` |
 | 任务重复触发 | 先删旧 chunks 再写，保证幂等 |
-| Worker 未启动 | 文档停留 `uploaded`；前端可持续轮询，运维需启动 Worker |
+| Worker 未启动 | 文档停留 `uploaded`；用户刷新仍见原状态，运维需启动 Worker |
 
 ## 10. 验收标准（方案 A）
 
@@ -237,15 +237,15 @@ chunk_overlap = 120
 2. PostgreSQL 可见对应 `document_chunks`，`chunk_count` 正确
 3. DOCX / TXT / MD 同样可跑通
 4. 失败文档为 `failed`，前端可见 `error_message`
-5. 前端轮询可看到状态变化，无需整页手动刷新
-6. **不要求** Milvus 有向量，**不要求** 状态为 `indexed`
+5. 用户手动刷新列表/详情可看到状态变化
+6. **不要求** Milvus 有向量，**不要求** 状态为 `embedded`
 
 ## 11. 与第 4 阶段衔接
 
 第 4 阶段 Worker / 任务应只处理 `status=chunked` 的文档：
 
 ```text
-chunked → embedding → 写 Milvus + 回填 vector_id → indexed
+chunked → embedding → 写 Milvus + 回填 vector_id → embedded
 ```
 
 本阶段 `vector_id` 一律为 `NULL`。

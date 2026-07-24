@@ -77,9 +77,9 @@ test('formatDateTime returns placeholder for empty values', () => {
   assert.equal(formatDateTime(''), '--');
 });
 
-test('getDocumentStatusMeta maps indexed state into success token', () => {
-  assert.deepEqual(getDocumentStatusMeta('indexed'), {
+test('getDocumentStatusMeta maps embedded state into success token', () => {
+  assert.deepEqual(getDocumentStatusMeta('embedded'), {
     color: 'success',
-    label: '已入库',
+    label: '已完成',
   });
 });

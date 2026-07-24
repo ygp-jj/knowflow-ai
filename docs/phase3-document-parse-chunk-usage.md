@@ -13,7 +13,7 @@
 3. 写入 `document_chunks`
 4. 将文档状态更新为 **`chunked`（已切片）**
 
-本阶段**不**做 Embedding、**不**写 Milvus、**不**进入 `indexed`。  
+本阶段**不**做 Embedding、**不**写 Milvus、**不**进入 `embedded`。  
 列表页**不轮询**；完成后请手动点「刷新」查看状态。
 
 ## 2. 状态机（方案 A）
@@ -23,7 +23,7 @@ uploaded → parsing → chunking → chunked   （成功，第 3 阶段结束�
                  ↘ failed ↙
 
 # 第 4 阶段再继续：
-chunked → embedding → indexed
+chunked → embedding → embedded
 ```
 
 | 状态 | 含义 | 本阶段是否出现 |
@@ -33,7 +33,7 @@ chunked → embedding → indexed
 | chunking | 切片中 | 是 |
 | chunked | 已切片，待向量化 | 是（成功终态） |
 | embedding | 向量化中 | 否（第 4 阶段） |
-| indexed | 已入库（含向量） | 否（第 4 阶段） |
+| embedded | 已完成（含向量） | 否（第 4 阶段） |
 | failed | 失败 | 是 |
 
 ## 3. 依赖与启动
@@ -48,16 +48,20 @@ chunked → embedding → indexed
 
 ### 3.2 枚举升级（已有库）
 
-新环境：使用更新后的 `neon-create-knowflow-tables.sql`（含 `chunked`）。
+新环境：使用更新后的 `neon-create-knowflow-tables.sql`（含 `chunked`、`embedded`）。
 
-已有 Neon 库需执行：
+已有 Neon 库若缺少枚举值，在 SQL Editor 或脚本依次执行：
+
+1. `backend/scripts/neon-alter-document-status-chunked.sql`
+2. `backend/scripts/neon-alter-document-status-embedded.sql`（新增 `embedded`，并将历史 `indexed` 更新为 `embedded`）
 
 ```powershell
 cd backend
 python scripts\create_neon_tables.py --sql-file scripts\neon-alter-document-status-chunked.sql
+python scripts\create_neon_tables.py --sql-file scripts\neon-alter-document-status-embedded.sql
 ```
 
-若曾执行过旧版建表脚本且枚举无 `chunked`，务必先跑上述 ALTER，再启动 Worker。
+若曾执行过旧版建表脚本且枚举无 `chunked`/`embedded`，务必先跑上述 ALTER，再启动 Worker。
 
 ### 3.3 启动 Worker
 
@@ -138,7 +142,7 @@ Content-Type: application/json
 3. 返回 `task_id`（可选）
 4. 前端列表不自动轮询；用户点击「刷新」查看 `parsing → chunking → chunked`
 
-### 4.2 查询详情 / 列表（轮询）
+### 4.2 查询详情 / 列表（手动刷新）
 
 ```http
 GET /api/v1/documents/detail?id=12
@@ -151,7 +155,7 @@ GET /api/v1/documents/list?page=1&page_size=10&knowledge_base_id=1
 - `chunk_count`
 - `error_message`
 
-前端应对进行中状态轮询，直到 `chunked` 或 `failed`。
+前端不轮询；用户手动刷新详情/列表，直到看到 `chunked` 或 `failed`。
 
 ### 4.3 查询切片列表（推荐）
 
@@ -179,8 +183,9 @@ GET /api/v1/documents/chunks?document_id=12&page=1&page_size=10
 ### 切片参数（MVP）
 
 ```text
-chunk_size = 800 字符
-chunk_overlap = 120 字符
+chunk_size = 256 字符
+chunk_overlap = 50 字符
+（可用环境变量 CHUNK_SIZE / CHUNK_OVERLAP 覆盖）
 ```
 
 ## 6. 前端行为说明
@@ -201,7 +206,7 @@ chunk_overlap = 120 字符
 - [ ] 上传 TXT/MD/DOCX 同样成功
 - [ ] 上传不支持类型 → `failed` + 明确错误信息
 - [ ] 前端无需整页刷新即可看到状态变化
-- [ ] 确认成功文档**不是** `indexed`（方案 A）
+- [ ] 确认成功文档**不是** `embedded`（方案 A；本阶段终态为 `chunked`）
 
 ### curl 示例
 
@@ -211,7 +216,7 @@ curl -X POST "http://127.0.0.1:8000/api/v1/documents/create" \
   -F "knowledge_base_id=1" \
   -F "file=@./sample.pdf"
 
-# 轮询详情
+# 刷新详情（手动）
 curl "http://127.0.0.1:8000/api/v1/documents/detail?id=12"
 
 # 查看切片
@@ -244,6 +249,6 @@ curl "http://127.0.0.1:8000/api/v1/documents/chunks?document_id=12&page=1&page_s
 | `document_chunks` 文本 | ✅ | — |
 | Embedding | ❌ | ✅ |
 | Milvus / `vector_id` | ❌ | ✅ |
-| 状态 `indexed` | ❌ | ✅ |
+| 状态 `embedded` | ❌ | ✅ |
 
 第 4 阶段应从 `status=chunked` 的文档继续处理。

@@ -31,15 +31,46 @@ def load_database_url(env_file: Path) -> str:
     raise RuntimeError(f"在 {env_file} 中没有找到 DATABASE_URL")
 
 
+def _split_sql_statements(sql_text: str) -> list[str]:
+    """按分号拆分 SQL 语句（忽略空段与纯注释段）。
+
+    说明: 用于保证 ALTER TYPE ADD VALUE 与后续 UPDATE 分句提交，
+    避免同一事务内无法使用新建枚举值。
+    """
+
+    statements: list[str] = []
+    for raw_part in sql_text.split(";"):
+        meaningful_lines = []
+        for line in raw_part.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("--"):
+                continue
+            meaningful_lines.append(line)
+        statement = "\n".join(meaningful_lines).strip()
+        if statement:
+            statements.append(statement)
+    return statements
+
+
 def run_sql(database_url: str, sql_file: Path) -> None:
     if not sql_file.exists():
         raise FileNotFoundError(f"未找到 SQL 文件：{sql_file}")
 
     sql_text = sql_file.read_text(encoding="utf-8")
+    statements = _split_sql_statements(sql_text)
+    if not statements:
+        raise RuntimeError(f"SQL 文件没有可执行语句：{sql_file}")
 
-    with psycopg.connect(database_url, autocommit=True) as conn:
+    # 兼容 SQLAlchemy 风格连接串前缀。
+    normalized_url = database_url.replace("postgresql+psycopg2://", "postgresql://").replace(
+        "postgresql+psycopg://",
+        "postgresql://",
+    )
+
+    with psycopg.connect(normalized_url, autocommit=True) as conn:
         with conn.cursor() as cur:
-            cur.execute(sql_text)
+            for statement in statements:
+                cur.execute(statement)
 
 
 def main() -> None:

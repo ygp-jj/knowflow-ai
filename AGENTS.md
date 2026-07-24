@@ -101,15 +101,17 @@ function handleClick() {
 
 - **上传不自动切片**：`POST /create` 仅落库并设为 `uploaded`。
 - **手动触发切片**：前端点击「切片」后调用 `POST /api/v1/documents/chunk`，再投递 Celery 任务。
-- 列表页**不做状态轮询**；用户点击「刷新」查看进度。
-- 本阶段成功终态为 `chunked`（已切片，待向量化）；**不要**在本阶段写入 Milvus，也**不要**将成功状态标为 `indexed`。
+- 列表页**不做状态轮询**（决策 A）；用户点击「刷新」查看进度。
+- 本阶段成功终态为 `chunked`（切片完成，待向量化）；**不要**在本阶段写入 Milvus。
 - 文档状态流转：`uploaded → parsing → chunking → chunked`；失败为 `failed` 并写入 `error_message`。
-- `embedding` / `indexed` 留给第 4 阶段：`chunked → embedding → indexed`。
+- 第 4 阶段：`chunked → embedding → embedded`（决策 B：统一使用 `embedded` 作为向量化完成终态，不再使用 `indexed`）。
 - 切片结果写入 `document_chunks`，并更新 `documents.chunk_count`；`vector_id` 本阶段保持为空。
-- MVP 切片参数：`chunk_size=800`，`chunk_overlap=120`（字符）。
+- MVP 切片参数（精准问答）：`chunk_size=256`，`chunk_overlap=50`（字符）；可通过环境变量 `CHUNK_SIZE` / `CHUNK_OVERLAP` 覆盖。
 - 本阶段支持解析：PDF / DOCX / TXT / Markdown；不支持类型任务失败。
-- 推荐补充接口：`GET /api/v1/documents/chunks?document_id=<id>&page=1&page_size=10`。
+- 接口路径维持现有风格（决策 C）：业务 id 不写进 URL 路径段。
+- 切片列表接口：`GET /api/v1/documents/chunks?document_id=<id>&page=1&page_size=10`。
 - 详细设计与任务拆分见：
+  - `docs/chunking-service-requirements.md`
   - `docs/phase3-document-parse-chunk-design.md`
   - `docs/phase3-document-parse-chunk-plan.md`
   - `docs/phase3-document-parse-chunk-usage.md`

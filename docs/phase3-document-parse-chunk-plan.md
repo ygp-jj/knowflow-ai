@@ -2,7 +2,7 @@
 
 > **For agentic workers:** 按 Task 顺序实现；每完成一个 Task 勾选 checkbox。优先单 Task 单 PR 或同一分支内按序提交。
 
-**Goal:** 上传文档后经 Celery 异步完成解析与切片，chunks 落 PostgreSQL，文档状态到达 `chunked`；前端可轮询状态。不做 Embedding / Milvus。
+**Goal:** 上传文档后经 Celery 异步完成解析与切片，chunks 落 PostgreSQL，文档状态到达 `chunked`；前端不轮询，手动刷新查看状态。不做 Embedding / Milvus。
 
 **Architecture:** 沿用 `route → schema → service → model`；耗时链路放入 Celery Worker。解析与切片无状态纯函数，由 `process_document` 编排并写库。
 
@@ -10,7 +10,7 @@
 
 **设计依据:** [phase3-document-parse-chunk-design.md](./phase3-document-parse-chunk-design.md)
 
-**终态约定（方案 A）:** 成功 = `chunked`（已切片）；`embedding` / `indexed` 留给第 4 阶段。
+**终态约定（方案 A）:** 成功 = `chunked`（已切片）；`embedding` / `embedded` 留给第 4 阶段。
 
 ---
 
@@ -24,7 +24,7 @@
 | 4 | Chunk 写入服务 | Task 1 | `chunk_service` + 清理/落库 |
 | 5 | Celery 基建与 `process_document` | Task 2–4 | Worker 可跑通主流程 |
 | 6 | 上传投递 + chunks 列表接口 | Task 5 | API 契约与接口测试 |
-| 7 | 前端轮询与状态展示 | Task 1, 6 | DocumentPage 体验 |
+| 7 | 前端状态展示（无轮询） | Task 1, 6 | DocumentPage 体验 |
 | 8 | 使用文档与联调验收 | Task 6–7 | `docs/` 说明 |
 
 建议并行：Task 2 与 Task 3 可并行；Task 1 需尽早完成供后续依赖。
@@ -43,7 +43,7 @@
 
 - [ ] Neon / 本地枚举新增 `chunked`（`ALTER TYPE ... ADD VALUE 'chunked'`）
 - [ ] 实现 `DocumentChunk` ORM，字段与 `document_chunks` 表对齐
-- [ ] 前端状态映射补齐：`chunked`（已切片）、`embedding`（向量化中，预留）
+- [ ] 前端状态映射补齐：`chunked`（已切片）、`embedding`（预留）、`embedded`（向量化完成，预留）
 - [ ] 更新建表脚本中的 enum 定义，保证新环境直接建库含 `chunked`
 
 **验收:**
@@ -77,7 +77,7 @@
 - Modify: `backend/app/services/text_splitter.py`
 - Create: `backend/tests/test_text_splitter.py`
 
-- [ ] 实现 `split_text(pages, chunk_size=800, chunk_overlap=120)`
+- [ ] 实现 `split_text(pages, chunk_size=256, chunk_overlap=50)`（可用环境变量覆盖）
 - [ ] 保留 `page_number`；生成有序 `chunk_index`（可由上层赋值）
 - [ ] 空页跳过；全空结果由上层判失败
 - [ ] 单测：短文本、跨 overlap、多页
@@ -156,7 +156,7 @@ celery -A app.tasks.celery_app.celery_app worker -Q documents --loglevel=info
 
 ---
 
-### Task 7: 前端轮询与状态展示
+### Task 7: 前端状态展示（无轮询）
 
 **Files:**
 - Modify: `frontend/src/utils/document-status.js`
@@ -165,8 +165,8 @@ celery -A app.tasks.celery_app.celery_app worker -Q documents --loglevel=info
 - Modify: `frontend/src/services/document-service.js`（如有 chunks API）
 - Optional: 详情内简易 chunk 预览列表
 
-- [ ] 列表存在非终态（`uploaded|parsing|chunking`）时轮询 list/detail
-- [ ] 到达 `chunked` 或 `failed` 停止轮询
+- [ ] 列表提供手动「刷新」；**不**做定时轮询
+- [ ] 展示 `chunked` / `failed` /（预留）`embedded` 文案
 - [ ] 失败展示 `error_message`
 - [ ] `chunk_count` 在表格或详情可见
 
@@ -177,11 +177,11 @@ celery -A app.tasks.celery_app.celery_app worker -Q documents --loglevel=info
 **终态集合（前端）:**
 
 ```text
-终态：chunked | failed | indexed
+终态：chunked | failed | embedded
 进行中：uploaded | parsing | chunking | embedding
 ```
 
-> 本阶段实际只会到 `chunked` / `failed`；`embedding`/`indexed` 预留。
+> 本阶段实际只会到 `chunked` / `failed`；`embedding`/`embedded` 预留。
 
 ---
 
@@ -208,7 +208,7 @@ celery -A app.tasks.celery_app.celery_app worker -Q documents --loglevel=info
 3) Task 4  chunk 落库
 4) Task 5  Celery 任务
 5) Task 6  API 投递与 chunks 列表
-6) Task 7  前端轮询
+6) Task 7  前端状态展示（无轮询）
 7) Task 8  文档收尾
 ```
 
@@ -217,7 +217,7 @@ celery -A app.tasks.celery_app.celery_app worker -Q documents --loglevel=info
 1. **Neon 枚举变更**：`ADD VALUE` 需单独事务；已有环境必须跑 alter 脚本。
 2. **Worker 未启动**：文档会停在 `uploaded`，需在文档中写明排查。
 3. **SQLite 测试 vs Postgres 枚举**：单测可用字符串 status；集成以 Neon/Postgres 为准。
-4. **与第 4 阶段边界**：禁止在本阶段写 Milvus 或把成功标成 `indexed`。
+4. **与第 4 阶段边界**：禁止在本阶段写 Milvus 或把成功标成 `embedded`。
 
 ## 完成定义（DoD）
 

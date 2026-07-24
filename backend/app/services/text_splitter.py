@@ -1,24 +1,50 @@
-"""文本切片服务：按固定窗口与 overlap 切分文档页。"""
+"""文本切片服务：按固定窗口与 overlap 切分文档页。
 
-DEFAULT_CHUNK_SIZE = 800
-DEFAULT_CHUNK_OVERLAP = 120
+默认 256/50，面向内部知识库精准问答（松散文本）场景。
+可通过配置 CHUNK_SIZE / CHUNK_OVERLAP 覆盖。
+"""
+
+from __future__ import annotations
+
+
+def _resolve_chunk_defaults() -> tuple[int, int]:
+    """读取配置中的默认切分参数，失败时回退到 256/50。"""
+
+    try:
+        from app.core.config import settings
+
+        return settings.chunk_size, settings.chunk_overlap
+    except Exception:
+        return 256, 50
+
+
+# 模块级默认值（与 Settings 一致，便于单测直接引用）。
+DEFAULT_CHUNK_SIZE = 256
+DEFAULT_CHUNK_OVERLAP = 50
 
 
 def split_text(
     pages: list[dict],
-    chunk_size: int = DEFAULT_CHUNK_SIZE,
-    chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
+    chunk_size: int | None = None,
+    chunk_overlap: int | None = None,
 ) -> list[dict]:
     """将解析页列表切成 chunks。
 
     参数:
         pages: ``[{page_number, content}, ...]``。
-        chunk_size: 每个切片最大字符数。
-        chunk_overlap: 相邻切片重叠字符数。
+        chunk_size: 每个切片最大字符数；默认取配置或 256。
+        chunk_overlap: 相邻切片重叠字符数；默认取配置或 50。
 
     返回:
         ``[{content, page_number, chunk_index}, ...]``，``chunk_index`` 从 0 递增。
     """
+
+    if chunk_size is None or chunk_overlap is None:
+        default_size, default_overlap = _resolve_chunk_defaults()
+        if chunk_size is None:
+            chunk_size = default_size
+        if chunk_overlap is None:
+            chunk_overlap = default_overlap
 
     if chunk_size <= 0:
         raise ValueError("chunk_size 必须大于 0")

@@ -58,10 +58,10 @@ INSERT INTO documents (
     updated_at
 )
 VALUES
-    (301, 201, 'leave_policy_2026.pdf', 'pdf', '/demo/leave_policy_2026.pdf', 248576, 'indexed', NULL, 1, NOW(), NOW()),
-    (302, 202, 'expense_policy_2026.pdf', 'pdf', '/demo/expense_policy_2026.pdf', 315904, 'indexed', NULL, 1, NOW(), NOW()),
-    (303, 203, 'onboarding_guide_2026.pdf', 'pdf', '/demo/onboarding_guide_2026.pdf', 287232, 'indexed', NULL, 1, NOW(), NOW()),
-    (304, 204, 'remote_work_policy_2026.pdf', 'pdf', '/demo/remote_work_policy_2026.pdf', 226304, 'indexed', NULL, 1, NOW(), NOW())
+    (301, 201, 'leave_policy_2026.pdf', 'pdf', '/demo/leave_policy_2026.pdf', 248576, 'chunked', NULL, 1, NOW(), NOW()),
+    (302, 202, 'expense_policy_2026.pdf', 'pdf', '/demo/expense_policy_2026.pdf', 315904, 'chunked', NULL, 1, NOW(), NOW()),
+    (303, 203, 'onboarding_guide_2026.pdf', 'pdf', '/demo/onboarding_guide_2026.pdf', 287232, 'chunked', NULL, 1, NOW(), NOW()),
+    (304, 204, 'remote_work_policy_2026.pdf', 'pdf', '/demo/remote_work_policy_2026.pdf', 226304, 'chunked', NULL, 1, NOW(), NOW())
 ON CONFLICT (id) DO UPDATE SET
     knowledge_base_id = EXCLUDED.knowledge_base_id,
     file_name = EXCLUDED.file_name,

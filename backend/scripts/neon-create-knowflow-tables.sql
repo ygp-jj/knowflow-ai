@@ -27,7 +27,7 @@ BEGIN
             'chunking',
             'chunked',
             'embedding',
-            'indexed',
+            'embedded',
             'failed'
         );
     END IF;

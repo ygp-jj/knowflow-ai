@@ -2,6 +2,7 @@
  * 功能：按需注册当前管理台页面使用到的 Ant Design Vue 组件，避免全量插件注册。
  */
 import {
+  Alert,
   Button,
   Card,
   Drawer,
@@ -11,9 +12,11 @@ import {
   Layout,
   Menu,
   Modal,
+  Pagination,
   Select,
   Skeleton,
   Space,
+  Spin,
   Table,
   Tag,
   Upload,
@@ -21,6 +24,7 @@ import {
 
 /** 当前项目实际使用的组件列表。 */
 const USED_ANTD_COMPONENTS = [
+  Alert,
   Button,
   Tag,
   Menu,
@@ -42,6 +46,8 @@ const USED_ANTD_COMPONENTS = [
   Input,
   Input.TextArea,
   Upload.Dragger,
+  Pagination,
+  Spin,
 ];
 
 /**

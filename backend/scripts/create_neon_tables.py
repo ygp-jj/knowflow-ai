@@ -34,8 +34,15 @@ def load_database_url(env_file: Path) -> str:
 def _split_sql_statements(sql_text: str) -> list[str]:
     """按分号拆分 SQL 语句（忽略空段与纯注释段）。
 
-    说明: 用于保证 ALTER TYPE ADD VALUE 与后续 UPDATE 分句提交，
-    避免同一事务内无法使用新建枚举值。
+    参数:
+        sql_text: 完整 SQL 脚本文本。
+
+    返回:
+        可执行语句列表。
+
+    说明:
+        用于保证 ``ALTER TYPE ... ADD VALUE`` 与后续 ``UPDATE`` 分句执行，
+        避免同一事务内尚不能引用新建枚举值（如 embedded）。
     """
 
     statements: list[str] = []
@@ -53,6 +60,13 @@ def _split_sql_statements(sql_text: str) -> list[str]:
 
 
 def run_sql(database_url: str, sql_file: Path) -> None:
+    """按语句顺序执行 SQL 文件（autocommit）。
+
+    参数:
+        database_url: PostgreSQL / Neon 连接串。
+        sql_file: 待执行的 SQL 文件路径。
+    """
+
     if not sql_file.exists():
         raise FileNotFoundError(f"未找到 SQL 文件：{sql_file}")
 
@@ -61,7 +75,7 @@ def run_sql(database_url: str, sql_file: Path) -> None:
     if not statements:
         raise RuntimeError(f"SQL 文件没有可执行语句：{sql_file}")
 
-    # 兼容 SQLAlchemy 风格连接串前缀。
+    # 兼容 SQLAlchemy 风格连接串前缀，转为 psycopg 可识别的 postgresql://。
     normalized_url = database_url.replace("postgresql+psycopg2://", "postgresql://").replace(
         "postgresql+psycopg://",
         "postgresql://",

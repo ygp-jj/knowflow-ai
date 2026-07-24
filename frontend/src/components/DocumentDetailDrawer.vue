@@ -147,17 +147,22 @@ const chunkPageSize = ref(5);
 /** 切片加载状态。 */
 const chunksLoading = ref(false);
 
-/** 是否允许加载切片（已有切片数或已进入切片终态）。 */
+/**
+ * 是否允许加载切片列表。
+ * 条件：已有 chunk_count，或状态已到切片完成及之后（含向量化中/已完成）。
+ */
 const canLoadChunks = computed(() => {
   if (!props.detail) {
     return false;
   }
 
-  /** 文档状态。 */
+  /** 当前文档状态。 */
   const status = props.detail.status;
-  /** 后端记录的切片数。 */
+  /** 后端记录的切片数量。 */
   const chunkCount = Number(props.detail.chunk_count || 0);
-  return chunkCount > 0 || ['chunked', 'embedding', 'embedded'].includes(status);
+  /** 切片完成及后续状态（embedded 为向量化终态，替代历史 indexed）。 */
+  const afterChunkedStatuses = ['chunked', 'embedding', 'embedded'];
+  return chunkCount > 0 || afterChunkedStatuses.includes(status);
 });
 
 watch(

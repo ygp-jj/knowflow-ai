@@ -77,6 +77,7 @@ test('formatDateTime returns placeholder for empty values', () => {
   assert.equal(formatDateTime(''), '--');
 });
 
+/** 向量化终态 embedded 应对应 success 颜色与「已完成」文案。 */
 test('getDocumentStatusMeta maps embedded state into success token', () => {
   assert.deepEqual(getDocumentStatusMeta('embedded'), {
     color: 'success',

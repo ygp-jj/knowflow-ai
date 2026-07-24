@@ -90,6 +90,7 @@ function handleClick() {
   - `DELETE /api/v1/documents/delete?id=1`
   - `GET /api/v1/documents/download?id=1`
   - `GET /api/v1/documents/chunks?document_id=1&page=1&page_size=10`
+  - `POST /api/v1/documents/chunk`（请求体 `{ "id": 1 }`，手动触发解析切片）
 - 文档列表支持可选 `knowledge_base_id` 过滤，并返回分页结构 `items`、`total`、`page`、`page_size`。
 - 文档统一响应格式为 `{ "code": 0, "message": "success", "data": ... }`，错误时 `data` 返回 `null`。
 - 文档文件在开发阶段直接存入本地 Docker 启动的 MinIO。
@@ -98,7 +99,9 @@ function handleClick() {
 
 ## 后端文档解析与切片约定（第 3 阶段 / 方案 A）
 
-- 上传成功后由 Celery 异步解析与切片，HTTP 接口立即返回，不等待处理完成。
+- **上传不自动切片**：`POST /create` 仅落库并设为 `uploaded`。
+- **手动触发切片**：前端点击「切片」后调用 `POST /api/v1/documents/chunk`，再投递 Celery 任务。
+- 列表页**不做状态轮询**；用户点击「刷新」查看进度。
 - 本阶段成功终态为 `chunked`（已切片，待向量化）；**不要**在本阶段写入 Milvus，也**不要**将成功状态标为 `indexed`。
 - 文档状态流转：`uploaded → parsing → chunking → chunked`；失败为 `failed` 并写入 `error_message`。
 - `embedding` / `indexed` 留给第 4 阶段：`chunked → embedding → indexed`。

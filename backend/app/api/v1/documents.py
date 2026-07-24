@@ -9,15 +9,21 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.schemas.common import error_response, success_response
-from app.schemas.document import DocumentChunkRead, DocumentCreateRead, DocumentRead, DocumentUpdate
+from app.schemas.document import (
+    DocumentChunkRead,
+    DocumentChunkRequest,
+    DocumentCreateRead,
+    DocumentRead,
+    DocumentUpdate,
+)
 from app.services.chunk_service import list_chunks
 from app.services.document_service import (
     create_document,
     delete_document,
-    enqueue_document_processing,
     get_document,
     get_download_payload,
     list_documents,
+    start_document_chunking,
     update_document,
 )
 from app.services.object_storage import get_object_storage
@@ -33,7 +39,7 @@ async def create(
     db: Session = Depends(get_db),
     object_storage=Depends(get_object_storage),
 ):
-    """上传文件到 MinIO、创建文档记录，并投递解析切片任务。"""
+    """上传文件到 MinIO 并创建文档记录，不自动切片。"""
 
     file_bytes = await file.read()
     file_name = file.filename or "unnamed-file"
@@ -50,7 +56,22 @@ async def create(
     if document is None:
         return error_response(404, "知识库不存在")
 
-    task_id = enqueue_document_processing(document.id)
+    # 上传后保持 uploaded，由前端「切片」按钮手动触发解析。
+    data = DocumentCreateRead.model_validate(document)
+    data.task_id = None
+    return success_response(data)
+
+
+@router.post("/chunk")
+def chunk(payload: DocumentChunkRequest, db: Session = Depends(get_db)):
+    """手动触发文档解析与切片任务。"""
+
+    document, task_id, error_message = start_document_chunking(db, payload.id)
+    if document is None:
+        return error_response(404, error_message or "文档不存在")
+    if error_message:
+        return error_response(400, error_message)
+
     data = DocumentCreateRead.model_validate(document)
     data.task_id = task_id
     return success_response(data)

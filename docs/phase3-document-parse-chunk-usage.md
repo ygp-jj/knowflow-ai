@@ -5,14 +5,16 @@
 
 ## 1. 阶段目标
 
-上传文档后，系统在后台自动：
+上传文档后，文件仅保存为 `uploaded`。  
+用户在文档列表点击 **「切片」** 后，系统才异步：
 
 1. 解析文件文本（PDF / DOCX / TXT / Markdown）
 2. 按固定窗口切片
 3. 写入 `document_chunks`
 4. 将文档状态更新为 **`chunked`（已切片）**
 
-本阶段**不**做 Embedding、**不**写 Milvus、**不**进入 `indexed`。
+本阶段**不**做 Embedding、**不**写 Milvus、**不**进入 `indexed`。  
+列表页**不轮询**；完成后请手动点「刷新」查看状态。
 
 ## 2. 状态机（方案 A）
 
@@ -85,7 +87,7 @@ npm run dev
 
 风格与第 2 阶段一致：**URL 路径不写动态 id**。
 
-### 4.1 上传文档（触发解析切片）
+### 4.1 上传文档（不自动切片）
 
 ```http
 POST /api/v1/documents/create
@@ -101,13 +103,26 @@ Content-Type: multipart/form-data
 
 1. 上传 MinIO
 2. 写入 `documents`，`status=uploaded`
-3. 投递 Celery 任务 `process_document`
-4. 立即返回（不等待解析完成）
+3. **不**投递 Celery 任务
+4. 立即返回
 
-响应 `data` 关键字段：
+### 4.1.1 手动触发切片
 
-- 文档元数据（同第 2 阶段）
-- `task_id`（可选，Celery 任务 ID）
+```http
+POST /api/v1/documents/chunk
+Content-Type: application/json
+```
+
+```json
+{ "id": 12 }
+```
+
+行为：
+
+1. 校验文档存在且状态允许切片（`uploaded` / `failed` / `chunked`）
+2. 投递 Celery 任务 `process_document`
+3. 返回 `task_id`（可选）
+4. 前端列表不自动轮询；用户点击「刷新」查看 `parsing → chunking → chunked`
 
 ### 4.2 查询详情 / 列表（轮询）
 
@@ -157,10 +172,10 @@ chunk_overlap = 120 字符
 ## 6. 前端行为说明
 
 1. 上传成功后列表出现新文档，状态「待解析」
-2. 轮询 list 或 detail（建议 2～3 秒）
-3. 状态变为「已切片」且 `chunk_count > 0` → 停止轮询
-4. 状态为「失败」→ 停止轮询，展示 `error_message`
-5. （可选）详情抽屉展示切片数量或调用 chunks 接口预览
+2. 用户点击「切片」才开始后台解析切片
+3. 列表**不轮询**；用户点击「刷新」查看状态与切片数
+4. 状态为「失败」时可再次点击「切片」重试
+5. 状态为「已切片」时可「重新切片」；详情抽屉可预览 chunk
 6. 文档详情抽屉会分页加载切片列表；列表「切片」按钮在可查看时可用
 
 ## 7. 联调验收清单

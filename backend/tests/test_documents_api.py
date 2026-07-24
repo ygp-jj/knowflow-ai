@@ -12,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.database import Base, get_db
 from app.main import app
 from app.models.chunk import DocumentChunk  # noqa: F401
+from app.models.document import Document
 from app.models.user import User
 
 
@@ -55,7 +56,7 @@ class DocumentsApiTests(unittest.TestCase):
 
         self.fake_storage = FakeObjectStorage()
         self.enqueue_patcher = patch(
-            "app.api.v1.documents.enqueue_document_processing",
+            "app.services.document_service.enqueue_document_processing",
             return_value="fake-task-id",
         )
         self.mock_enqueue = self.enqueue_patcher.start()
@@ -93,8 +94,8 @@ class DocumentsApiTests(unittest.TestCase):
         self.assertEqual(create_body["data"]["knowledge_base_id"], 1)
         self.assertEqual(create_body["data"]["file_name"], "product.pdf")
         self.assertEqual(create_body["data"]["status"], "uploaded")
-        self.assertEqual(create_body["data"]["task_id"], "fake-task-id")
-        self.mock_enqueue.assert_called_once()
+        self.assertIsNone(create_body["data"].get("task_id"))
+        self.mock_enqueue.assert_not_called()
         document_id = create_body["data"]["id"]
 
         list_response = self.client.get("/api/v1/documents/list?page=1&page_size=10&knowledge_base_id=1")
@@ -191,6 +192,43 @@ class DocumentsApiTests(unittest.TestCase):
         self.assertEqual(body["code"], 0)
         self.assertEqual(body["data"]["total"], 1)
         self.assertEqual(body["data"]["items"][0]["content"], "hello chunk")
+
+    def test_manual_chunk_endpoint_enqueues_task(self):
+        create_response = self.client.post(
+            "/api/v1/documents/create",
+            data={"knowledge_base_id": "1"},
+            files={"file": ("manual.txt", io.BytesIO(b"hello"), "text/plain")},
+        )
+        document_id = create_response.json()["data"]["id"]
+        self.mock_enqueue.reset_mock()
+
+        response = self.client.post("/api/v1/documents/chunk", json={"id": document_id})
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["code"], 0)
+        self.assertEqual(body["data"]["id"], document_id)
+        self.assertEqual(body["data"]["task_id"], "fake-task-id")
+        self.mock_enqueue.assert_called_once_with(document_id)
+
+    def test_manual_chunk_rejects_processing_status(self):
+        create_response = self.client.post(
+            "/api/v1/documents/create",
+            data={"knowledge_base_id": "1"},
+            files={"file": ("busy.txt", io.BytesIO(b"hello"), "text/plain")},
+        )
+        document_id = create_response.json()["data"]["id"]
+
+        db = self.SessionLocal()
+        document = db.query(Document).filter(Document.id == document_id).first()
+        document.status = "parsing"
+        db.commit()
+        db.close()
+
+        response = self.client.post("/api/v1/documents/chunk", json={"id": document_id})
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["code"], 400)
+        self.assertIn("正在处理中", body["message"])
 
 
 if __name__ == "__main__":

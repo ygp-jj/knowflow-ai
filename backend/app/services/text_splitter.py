@@ -44,9 +44,21 @@ def _resolve_chunk_defaults() -> tuple[int, int]:
         return 256, 50
 
 
+def _resolve_title_standalone() -> bool:
+    """读取「标题独立成块」开关；读取失败时默认 True。"""
+
+    try:
+        from app.core.config import settings
+
+        return settings.chunk_title_standalone
+    except Exception:
+        return True
+
+
 # 模块级默认值（与 Settings 一致，便于单测直接断言，无需加载完整配置）。
 DEFAULT_CHUNK_SIZE = 256
 DEFAULT_CHUNK_OVERLAP = 50
+DEFAULT_TITLE_STANDALONE = True
 
 
 def _detect_title(line: str) -> tuple[int, str] | None:
@@ -250,13 +262,15 @@ def split_pages_to_chunks(
     pages: list[dict],
     chunk_size: int | None = None,
     chunk_overlap: int | None = None,
+    title_standalone: bool | None = None,
 ) -> list[dict]:
-    """将解析后的页列表按页内滑动窗口切成文本块。
+    """将解析后的页列表按结构化规则切成文本块。
 
     参数:
         pages: 页列表，每项形如 ``{"page_number": int|None, "content": str}``。
         chunk_size: 单块最大字符数；传 None 时取配置或模块默认 256。
         chunk_overlap: 相邻块重叠字符数；传 None 时取配置或模块默认 50。
+        title_standalone: 标题是否独立成块；传 None 时取配置 CHUNK_TITLE_STANDALONE（默认 True）。
 
     返回:
         切片列表，每项形如 ``{"content", "page_number", "chunk_index"}``；
@@ -273,6 +287,9 @@ def split_pages_to_chunks(
             chunk_size = default_size
         if chunk_overlap is None:
             chunk_overlap = default_overlap
+
+    if title_standalone is None:
+        title_standalone = _resolve_title_standalone()
 
     if chunk_size <= 0:
         raise ValueError("chunk_size 必须大于 0")
@@ -322,6 +339,26 @@ def split_pages_to_chunks(
             current_chunk = ""
             current_meta = None
 
+        def emit_standalone_title(title_text: str, title_meta: dict) -> None:
+            """将标题单独落为一个 chunk（不与后续段落合并）。"""
+
+            nonlocal chunk_index
+            title_text = title_text.strip()
+            if not title_text:
+                return
+
+            last_content = chunks[-1]["content"] if chunks else None
+            if title_text == last_content:
+                return
+
+            chunks.append({
+                "content": title_text,
+                "page_number": page_number,
+                "chunk_index": chunk_index,
+                "metadata": dict(title_meta),
+            })
+            chunk_index += 1
+
         for block in structured_blocks:
             block_text = block["text"]
             block_meta = {
@@ -332,8 +369,11 @@ def split_pages_to_chunks(
             }
 
             # 遇到新标题时先落盘当前 chunk，避免跨标题拼接在同一块中。
-            if block["boundary_type"] == "title" and current_chunk:
+            if block["boundary_type"] == "title":
                 flush_current_chunk()
+                if title_standalone:
+                    emit_standalone_title(block_text, block_meta)
+                    continue
 
             if len(block_text) > chunk_size:
                 flush_current_chunk()

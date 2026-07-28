@@ -45,9 +45,10 @@ class Settings(BaseSettings):
     rag_max_context_chars: int = 8000         # 拼接给 LLM 的最大字符数
 
     # ========== 文本切片参数（精准问答场景默认 256/50） ==========
-    # 对应环境变量：CHUNK_SIZE / CHUNK_OVERLAP；见 docs/chunking-service-requirements.md
+    # 对应环境变量：CHUNK_SIZE / CHUNK_OVERLAP / CHUNK_TITLE_STANDALONE
     chunk_size: int = 256                     # 单块最大字符数（滑动窗口长度）
     chunk_overlap: int = 50                   # 相邻块重叠字符数（须小于 chunk_size）
+    chunk_title_standalone: bool = True        # 标题是否独立成块（不与后续段落合并）
 
     # ========== MinIO 对象存储 ==========
     minio_endpoint: str = "localhost:9000"    # MinIO 服务地址

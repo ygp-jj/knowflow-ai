@@ -13,6 +13,9 @@
   - `section_title`
   - `section_level`
   - `paragraph_index`
+- [x] **标题独立成块开关**（`CHUNK_TITLE_STANDALONE`，默认 `true`）
+  - `true`：每个标题单独一个 chunk，不与后续段落合并
+  - `false`：标题可与后续短段落合并（在 `chunk_size` 内）
 - [x] 单测补齐：
   - 标题+段落优先切分
   - 长段落 sentence/sliding 兜底
@@ -24,7 +27,7 @@
 
 - [ ] 将标题 regex 提取为配置项（便于按业务文档类型微调）。
 - [ ] 增加“短段合并阈值”配置（避免碎片化 chunk）。
-- [ ] 增加“标题独立成块”开关（当前为可与段落同块）。
+- [x] 增加“标题独立成块”开关（`CHUNK_TITLE_STANDALONE`，默认 true）。
 - [ ] 增加表格/列表专用边界处理（避免条款跨行混排）。
 
 ### Phase 3：数据与接口增强

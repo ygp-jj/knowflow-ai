@@ -8,6 +8,7 @@ import unittest
 from app.services.text_splitter import (
     DEFAULT_CHUNK_OVERLAP,
     DEFAULT_CHUNK_SIZE,
+    DEFAULT_TITLE_STANDALONE,
     split_pages_to_chunks,
     split_text,
 )
@@ -15,10 +16,11 @@ from app.services.text_splitter import (
 
 class TextSplitterTests(unittest.TestCase):
     def test_default_chunk_params_for_qa_scene(self):
-        """精准问答场景模块默认切分参数应为 256/50。"""
+        """精准问答场景模块默认切分参数应为 256/50，标题默认独立成块。"""
 
         self.assertEqual(DEFAULT_CHUNK_SIZE, 256)
         self.assertEqual(DEFAULT_CHUNK_OVERLAP, 50)
+        self.assertTrue(DEFAULT_TITLE_STANDALONE)
 
     def test_split_short_text_single_chunk(self):
         """短于窗口的文本应只产出一块，且 chunk_index 从 0 开始。"""
@@ -144,7 +146,7 @@ class TextSplitterTests(unittest.TestCase):
             ),
         }]
 
-        chunks = split_pages_to_chunks(pages, chunk_size=120, chunk_overlap=20)
+        chunks = split_pages_to_chunks(pages, chunk_size=120, chunk_overlap=20, title_standalone=True)
         self.assertGreaterEqual(len(chunks), 2)
 
         joined = [item["content"] for item in chunks]
@@ -152,6 +154,49 @@ class TextSplitterTests(unittest.TestCase):
         idx = next(i for i, text in enumerate(joined) if "三、请假时长计算规则" in text)
         self.assertGreater(idx, 0)
         self.assertNotIn("三、请假时长计算规则", joined[idx - 1])
+
+    def test_title_standalone_emits_title_only_chunk(self):
+        """开启 title_standalone 时，标题应单独成块，正文进入下一块。"""
+
+        pages = [{
+            "page_number": 1,
+            "content": (
+                "二、审批路径说明\n"
+                "结合公司请假管理制度及岗位层级，统一审批流转路径如下：\n"
+                "三、请假时长计算规则\n"
+                "为规范假期核算、统一考勤标准，公司请假时长计算规则如下："
+            ),
+        }]
+        chunks = split_pages_to_chunks(pages, chunk_size=256, chunk_overlap=50, title_standalone=True)
+
+        title_chunks = [
+            item for item in chunks
+            if item.get("metadata", {}).get("boundary_type") == "title"
+        ]
+        self.assertGreaterEqual(len(title_chunks), 2)
+        self.assertEqual(title_chunks[0]["content"], "二、审批路径说明")
+        self.assertEqual(title_chunks[1]["content"], "三、请假时长计算规则")
+        self.assertTrue(any("统一审批流转路径如下" in item["content"] for item in chunks))
+        self.assertTrue(any("公司请假时长计算规则如下" in item["content"] for item in chunks))
+
+    def test_title_standalone_off_allows_merge_within_size(self):
+        """关闭 title_standalone 时，标题可与后续短段落合并（在 chunk_size 内）。"""
+
+        pages = [{
+            "page_number": 1,
+            "content": "二、审批路径说明\n结合公司制度执行。",
+        }]
+        standalone_chunks = split_pages_to_chunks(
+            pages, chunk_size=256, chunk_overlap=50, title_standalone=True,
+        )
+        merged_chunks = split_pages_to_chunks(
+            pages, chunk_size=256, chunk_overlap=50, title_standalone=False,
+        )
+
+        self.assertGreaterEqual(len(standalone_chunks), 2)
+        self.assertEqual(len(merged_chunks), 1)
+        self.assertIn("二、审批路径说明", merged_chunks[0]["content"])
+        self.assertIn("结合公司制度执行", merged_chunks[0]["content"])
 
 
 if __name__ == "__main__":

@@ -131,6 +131,28 @@ class TextSplitterTests(unittest.TestCase):
         self.assertTrue(all("metadata" in item for item in chunks))
         self.assertTrue(any(item["metadata"]["boundary_type"] in {"sentence", "sliding"} for item in chunks))
 
+    def test_inline_title_should_start_new_chunk(self):
+        """内联标题（紧跟句号）应切到下一块，避免粘在上一个切片尾部。"""
+
+        pages = [{
+            "page_number": 1,
+            "content": (
+                "（5）上传附件：病假必须上传正规医院诊断证明、病历、病假条等佐证材料，无附件不予审批。"
+                "3. 所有信息填写核对无误后，提交申请，系统将自动推送至对应审批人待审。"
+                "二、审批路径说明结合公司请假管理制度及岗位层级，统一审批流转路径如下："
+                "三、请假时长计算规则为规范假期核算、统一考勤标准，公司请假时长计算规则如下："
+            ),
+        }]
+
+        chunks = split_pages_to_chunks(pages, chunk_size=120, chunk_overlap=20)
+        self.assertGreaterEqual(len(chunks), 2)
+
+        joined = [item["content"] for item in chunks]
+        # “三、请假时长计算规则”必须出现在新块开头附近，而不是上一块尾部。
+        idx = next(i for i, text in enumerate(joined) if "三、请假时长计算规则" in text)
+        self.assertGreater(idx, 0)
+        self.assertNotIn("三、请假时长计算规则", joined[idx - 1])
+
 
 if __name__ == "__main__":
     unittest.main()

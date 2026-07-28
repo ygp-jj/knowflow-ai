@@ -21,6 +21,12 @@ _CN_CHAPTER_PATTERN = re.compile(r"^(第[一二三四五六七八九十百千万
 _CN_ITEM_PATTERN = re.compile(r"^([一二三四五六七八九十]+[、.．])\s*(.+)$")
 _CN_SUB_ITEM_PATTERN = re.compile(r"^(（[一二三四五六七八九十0-9]+）)\s*(.+)$")
 _DIGIT_ITEM_PATTERN = re.compile(r"^(\d+(?:\.\d+){0,3})[、.．\s]+(.+)$")
+_INLINE_TITLE_BREAK_PATTERN = re.compile(
+    r"([。！？；：:\n\r])\s*"
+    r"(第[一二三四五六七八九十百千万零0-9]+[章节篇]"
+    r"|[一二三四五六七八九十]+[、.．]"
+    r"|（[一二三四五六七八九十0-9]+）)"
+)
 
 
 def _resolve_chunk_defaults() -> tuple[int, int]:
@@ -47,7 +53,7 @@ def _detect_title(line: str) -> tuple[int, str] | None:
     """识别标题行，返回 (层级, 标题文本)。"""
 
     text = line.strip()
-    if not text or len(text) > 80:
+    if not text:
         return None
 
     markdown_match = _MARKDOWN_TITLE_PATTERN.match(text)
@@ -80,6 +86,9 @@ def _detect_title(line: str) -> tuple[int, str] | None:
 def _extract_structured_blocks(content: str) -> list[dict]:
     """从原始文本中提取结构化块（标题块/段落块）。"""
 
+    # 处理“标题与上一句粘连在同一行”的情况，强制在标题前断行。
+    normalized_content = _INLINE_TITLE_BREAK_PATTERN.sub(r"\1\n\2", content)
+
     blocks: list[dict] = []
     paragraph_lines: list[str] = []
     section_title: str | None = None
@@ -103,7 +112,7 @@ def _extract_structured_blocks(content: str) -> list[dict]:
         })
         paragraph_index += 1
 
-    for raw_line in content.splitlines():
+    for raw_line in normalized_content.splitlines():
         line = raw_line.rstrip()
         stripped = line.strip()
         if not stripped:

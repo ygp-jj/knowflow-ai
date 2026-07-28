@@ -94,6 +94,43 @@ class TextSplitterTests(unittest.TestCase):
         self.assertEqual(formal, alias)
         self.assertIs(split_text, split_pages_to_chunks)
 
+    def test_title_and_paragraph_first_chunking(self):
+        """应优先按标题/段落切分，并在 metadata 中保留结构信息。"""
+
+        pages = [{
+            "page_number": 1,
+            "content": (
+                "一、请假申请流程\n"
+                "员工需登录系统提交申请，并上传证明材料。\n\n"
+                "二、审批规则\n"
+                "直属主管 1 个工作日内审批。"
+            ),
+        }]
+        chunks = split_pages_to_chunks(pages, chunk_size=40, chunk_overlap=10)
+
+        self.assertGreaterEqual(len(chunks), 2)
+        self.assertTrue(any(item["metadata"].get("section_title") == "一、请假申请流程" for item in chunks))
+        self.assertTrue(any(item["metadata"].get("section_title") == "二、审批规则" for item in chunks))
+        self.assertTrue(any("直属主管 1 个工作日内审批" in item["content"] for item in chunks))
+
+    def test_long_paragraph_uses_sentence_or_sliding_fallback(self):
+        """超长段落应触发 sentence/sliding 兜底，并保留结构元数据。"""
+
+        pages = [{
+            "page_number": 1,
+            "content": (
+                "三、补充说明\n"
+                "本制度适用于全体员工。"
+                "请严格遵循流程提交申请。"
+                "若材料不全，系统会驳回并提示补充。"
+            ),
+        }]
+        chunks = split_pages_to_chunks(pages, chunk_size=24, chunk_overlap=8)
+
+        self.assertGreaterEqual(len(chunks), 2)
+        self.assertTrue(all("metadata" in item for item in chunks))
+        self.assertTrue(any(item["metadata"]["boundary_type"] in {"sentence", "sliding"} for item in chunks))
+
 
 if __name__ == "__main__":
     unittest.main()

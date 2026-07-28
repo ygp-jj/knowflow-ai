@@ -67,6 +67,24 @@ class TextSplitterTests(unittest.TestCase):
         )
         self.assertEqual([item["chunk_index"] for item in chunks], [0, 1, 2, 3, 4])
 
+    def test_align_chunk_boundary_avoids_mid_word_prefix(self):
+        """切片应尽量在标点/换行边界衔接，避免下一片从词中间开头。"""
+
+        pages = [{
+            "page_number": 1,
+            "content": (
+                "附件：病假必须上传正规医院诊断证明、病历、病假条等佐证材料，无附件不予审批。\n"
+                "所有信息填写核对无误后，提交申请。"
+            ),
+        }]
+        chunks = split_pages_to_chunks(pages, chunk_size=40, chunk_overlap=12)
+
+        self.assertGreaterEqual(len(chunks), 2)
+        for item in chunks[1:]:
+            self.assertFalse(item["content"].startswith("件："))
+        self.assertTrue(any("无附件不予审批" in item["content"] for item in chunks))
+        self.assertTrue(any("所有信息填写核对无误后" in item["content"] for item in chunks))
+
     def test_split_text_alias_matches_formal_api(self):
         """兼容别名 split_text 应与正式入口行为一致。"""
 

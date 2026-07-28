@@ -12,6 +12,8 @@
 
 from __future__ import annotations
 
+_BOUNDARY_CHARS = set("。！？；：\n\r")
+
 
 def _resolve_chunk_defaults() -> tuple[int, int]:
     """读取配置中心的默认切分参数。
@@ -31,6 +33,33 @@ def _resolve_chunk_defaults() -> tuple[int, int]:
 # 模块级默认值（与 Settings 一致，便于单测直接断言，无需加载完整配置）。
 DEFAULT_CHUNK_SIZE = 256
 DEFAULT_CHUNK_OVERLAP = 50
+
+
+def _align_chunk_end(content: str, start: int, end: int) -> int:
+    """尽量把切片结尾对齐到句子/行边界，减少断句。"""
+
+    if end >= len(content):
+        return end
+
+    # 只在窗口后 40% 区间回溯，避免切片过短。
+    min_end = start + max(1, int((end - start) * 0.6))
+    for idx in range(end - 1, min_end - 1, -1):
+        if content[idx] in _BOUNDARY_CHARS:
+            return idx + 1
+    return end
+
+
+def _align_next_start(content: str, start: int, end: int) -> int:
+    """把下一片起点前移到最近边界后，避免从词中间开头。"""
+
+    if start <= 0:
+        return 0
+
+    search_end = min(len(content), max(start + 1, start + 30, end))
+    for idx in range(start, search_end):
+        if content[idx] in _BOUNDARY_CHARS:
+            return idx + 1
+    return start
 
 
 def split_pages_to_chunks(
@@ -84,21 +113,26 @@ def split_pages_to_chunks(
 
         # 页内滑动窗口：每次前进 (chunk_size - chunk_overlap)。
         while start < content_length:
-            end = min(start + chunk_size, content_length)
+            hard_end = min(start + chunk_size, content_length)
+            end = _align_chunk_end(content, start, hard_end)
             chunk_text = content[start:end].strip()
 
             if chunk_text:
-                chunks.append({
-                    "content": chunk_text,
-                    "page_number": page_number,
-                    "chunk_index": chunk_index,
-                })
-                chunk_index += 1
+                # 避免连续重复块（边界对齐后极端情况下可能出现相同内容）。
+                last_content = chunks[-1]["content"] if chunks else None
+                if chunk_text != last_content:
+                    chunks.append({
+                        "content": chunk_text,
+                        "page_number": page_number,
+                        "chunk_index": chunk_index,
+                    })
+                    chunk_index += 1
 
             if end >= content_length:
                 break
 
-            start = end - chunk_overlap
+            next_start = max(start + 1, end - chunk_overlap)
+            start = _align_next_start(content, next_start, end)
 
     return chunks
 

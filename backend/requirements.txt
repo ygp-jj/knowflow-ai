@@ -4,7 +4,8 @@ pydantic==2.11.4
 pydantic-settings==2.9.1
 python-dotenv==1.1.0
 sqlalchemy==2.0.40
-psycopg[binary]==3.2.3
+psycopg2-binary==2.9.9          # 新增（解决 No module named 'psycopg2'）
+psycopg[binary]==3.2.3          # 如果项目还用了 psycopg 新驱动，保留；否则可以删除
 alembic==1.15.2
 redis==5.2.1
 celery==5.5.2

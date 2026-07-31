@@ -8,8 +8,8 @@ import { fileURLToPath, URL } from 'node:url';
 export default defineConfig(({ mode }) => {
   /** 当前模式下的环境变量。 */
   const env = loadEnv(mode, process.cwd(), '');
-  /** 本地开发代理指向的后端地址。 */
-  const proxyTarget = env.VITE_PROXY_TARGET || 'http://127.0.0.1:8000';
+  /** 本地开发代理指向的后端地址。优先使用环境变量，默认直接指向云服务器后端。 */
+  const proxyTarget = env.VITE_PROXY_TARGET || 'http://120.26.2.20:8000';
 
   return {
     plugins: [vue()],

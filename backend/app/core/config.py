@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List
 
 
@@ -6,7 +6,6 @@ class Settings(BaseSettings):
     # 应用配置类，自动从 .env 文件或环境变量加载配置项。
     # 字段名大小写不敏感（case_sensitive=False），习惯上用 snake_case。
 
-    
     # ========== 应用基础配置 ==========
     app_name: str = "KnowFlow AI"          # 应用名称
     app_env: str = "development"          # 运行环境：development / production / testing
@@ -45,7 +44,6 @@ class Settings(BaseSettings):
     rag_max_context_chars: int = 8000         # 拼接给 LLM 的最大字符数
 
     # ========== 文本切片参数（精准问答场景默认 256/50） ==========
-    # 对应环境变量：CHUNK_SIZE / CHUNK_OVERLAP / CHUNK_TITLE_STANDALONE
     chunk_size: int = 256                     # 单块最大字符数（滑动窗口长度）
     chunk_overlap: int = 50                   # 相邻块重叠字符数（须小于 chunk_size）
     chunk_title_standalone: bool = True        # 标题是否独立成块（不与后续段落合并）
@@ -57,12 +55,13 @@ class Settings(BaseSettings):
     minio_bucket_name: str = "knowflow-documents"  # 文档上传桶名
     minio_secure: bool = False                # 本地开发默认使用 HTTP
 
-    # ========== pydantic-settings 配置 ==========
-    class Config:
-        # 指定从当前目录的 .env 文件加载环境变量
-        env_file = ".env"
-        # 字段名匹配时忽略大小写（即环境变量 DATABASE_URL 对应 database_url）
-        case_sensitive = False
+    # ========== pydantic-settings 配置（新版本写法） ==========
+    model_config = SettingsConfigDict(
+        env_file=".env",          # 从当前目录的 .env 文件加载
+        env_file_encoding="utf-8",
+        case_sensitive=False,     # 环境变量名不区分大小写
+        extra="ignore"            # 忽略未定义的字段（防止多余变量报错）
+    )
 
     # ========== 计算属性 ==========
     @property

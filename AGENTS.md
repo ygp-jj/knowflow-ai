@@ -97,6 +97,18 @@ function handleClick() {
 - 删除文档时必须同时删除数据库记录和 MinIO 对象。
 - 下载文档时通过后端下载接口返回文件流，不直接暴露 MinIO 真实对象地址。
 
+## 后端文档向量化约定（第 4 阶段）
+
+- **切片不自动向量化**：切片成功终态仍为 `chunked`；需前端手动触发向量化。
+- **手动触发向量化**：`POST /api/v1/documents/embed`，请求体 `{ "id": 1 }`，再投递 Celery 任务。
+- 文档状态流转：`chunked → embedding → embedded`；失败为 `failed` 并写入 `error_message`。
+- 允许再次向量化的状态：`chunked` / `embedded` / `failed`（且 `chunk_count > 0`）。
+- Embedding 使用 OpenAI 兼容接口（`EMBEDDING_*`）；向量写入 Milvus（`MILVUS_*`）。
+- Milvus 主键与 PG `document_chunks.id` 对齐；回填 `document_chunks.vector_id = str(chunk_id)`。
+- 重新向量化前先按 `document_id` 清理旧向量；删除文档时 best-effort 清理 Milvus。
+- 列表页仍不做状态轮询；用户点击「刷新」查看 `embedding` / `embedded` / `failed`。
+- 父块与子块均需写入向量，便于后续检索命中父块后再扩子块。
+
 ## 后端文档解析与切片约定（第 3 阶段 / 方案 A）
 
 - **上传不自动切片**：`POST /create` 仅落库并设为 `uploaded`。

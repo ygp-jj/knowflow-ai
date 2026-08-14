@@ -13,6 +13,7 @@ from app.schemas.document import (
     DocumentChunkRead,
     DocumentChunkRequest,
     DocumentCreateRead,
+    DocumentEmbedRequest,
     DocumentRead,
     DocumentUpdate,
 )
@@ -24,6 +25,7 @@ from app.services.document_service import (
     get_download_payload,
     list_documents,
     start_document_chunking,
+    start_document_embedding,
     update_document,
 )
 from app.services.object_storage import get_object_storage
@@ -67,6 +69,25 @@ def chunk(payload: DocumentChunkRequest, db: Session = Depends(get_db)):
     """手动触发文档解析与切片任务。"""
 
     document, task_id, error_message = start_document_chunking(db, payload.id)
+    if document is None:
+        return error_response(404, error_message or "文档不存在")
+    if error_message:
+        return error_response(400, error_message)
+
+    data = DocumentCreateRead.model_validate(document)
+    data.task_id = task_id
+    return success_response(data)
+
+
+@router.post("/embed")
+def embed(payload: DocumentEmbedRequest, db: Session = Depends(get_db)):
+    """手动触发文档向量化（Embedding → Milvus），成功后 status=embedded。
+
+    排查：若长期停在 embedding，检查 Celery Worker 是否加载 embedding_tasks、
+    Redis 是否可达、EMBEDDING_* / MILVUS_* 配置与日志。
+    """
+
+    document, task_id, error_message = start_document_embedding(db, payload.id)
     if document is None:
         return error_response(404, error_message or "文档不存在")
     if error_message:

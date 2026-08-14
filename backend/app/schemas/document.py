@@ -36,7 +36,7 @@ class DocumentRead(BaseModel):
 
 
 class DocumentCreateRead(DocumentRead):
-    """文档创建 / 触发切片响应，附带可选 Celery task_id。"""
+    """文档创建 / 触发切片 / 触发向量化响应，附带可选 Celery task_id。"""
 
     task_id: Optional[str] = None
 
@@ -46,6 +46,16 @@ class DocumentChunkRequest(BaseModel):
 
     字段:
         id: 文档 ID。
+    """
+
+    id: int = Field(..., gt=0, description="文档 ID")
+
+
+class DocumentEmbedRequest(BaseModel):
+    """手动触发向量化请求（第 4 阶段）。
+
+    字段:
+        id: 文档 ID；须已切片（chunked）或需重新向量化（embedded/failed）。
     """
 
     id: int = Field(..., gt=0, description="文档 ID")

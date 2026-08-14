@@ -123,3 +123,15 @@ export async function chunkDocument(id) {
 
   return unwrapApiResponse(response.data);
 }
+
+/**
+ * 手动触发文档向量化（Embedding + 写入 Milvus）。
+ * @param {number} id 文档 ID。
+ * @returns {Promise<any>} 含可选 task_id；列表页不轮询，请点刷新查看 status。
+ */
+export async function embedDocument(id) {
+  /** 触发向量化响应对象。 */
+  const response = await httpClient.post('/documents/embed', { id });
+
+  return unwrapApiResponse(response.data);
+}

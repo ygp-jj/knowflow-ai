@@ -81,7 +81,7 @@ class DocumentChunk(Base):
     token_count = Column(Integer, nullable=False, default=0)
 
     # Milvus 向量 ID（用于向量检索）。
-    # 第 3 阶段（向量化）之前，这个字段为 NULL。
+    # 第 4 阶段向量化后回填，当前实现为 str(chunk_id)，与 Milvus 主键对齐。
     # 前端如果做语义检索，会通过后端接口拿到对应的 chunk，而不直接操作这个 ID。
     vector_id = Column(String(128), nullable=True, index=True)
 

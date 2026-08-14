@@ -5,12 +5,15 @@
         - 接收上传的文件，存入对象存储（MinIO），并创建文档记录
         - 查询文档列表（支持按知识库筛选和分页）
         - 更新文档信息（如文件名）
-        - 删除文档（连同对象存储中的文件一起清理）
+        - 删除文档（连同对象存储、Milvus 向量一起清理）
         - 提供下载所需的内容
-        - 手动触发文档的异步切片任务（解析 + 切块）
-   前端通过 REST API 调用这些功能，返回的文档状态字段（status）是前端轮询进度的关键。
+        - 手动触发文档的异步切片 / 向量化任务
+   前端通过 REST API 调用这些功能；列表页不轮询，用户点「刷新」查看 status。
 """
 
+from __future__ import annotations
+
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -20,6 +23,8 @@ from sqlalchemy.orm import Session
 from app.models.document import Document
 from app.models.knowledge_base import KnowledgeBase
 from app.schemas.document import DocumentUpdate
+
+logger = logging.getLogger(__name__)
 
 
 # 文档刚上传后的初始状态（前端上传成功后看到的状态）
@@ -171,20 +176,32 @@ def update_document(db: Session, payload: DocumentUpdate) -> Document | None:
 
 
 def delete_document(db: Session, object_storage, document_id: int) -> bool:
-    """【前端删除文档】删除文档记录和对应的 MinIO 文件。
+    """【前端删除文档】删除文档记录、MinIO 文件，并尽力清理 Milvus 向量。
 
     工作流程：
         1. 查询文档是否存在
-        2. 从 MinIO 删除原始文件
-        3. 从数据库删除文档记录（注意：切片数据会由外键级联或单独清理）
+        2. best-effort 删除该文档在 Milvus 中的向量（失败只打日志，不阻断删除）
+        3. 从 MinIO 删除原始文件
+        4. 从数据库删除文档记录（切片通常由外键级联清理）
 
     前端调用后：
-        文档及其所有切片数据都会被移除（具体由外键级联决定）。
+        文档及其切片会被移除；向量清理失败时可对照日志手动清 Milvus。
         返回 True 表示删除成功，False 表示文档不存在。
     """
     document = get_document(db, document_id)
     if document is None:
         return False
+
+    # 向量清理失败不应挡住业务删除；否则 Milvus 宕机会导致文档无法删
+    try:
+        from app.services.milvus_service import get_milvus_service
+
+        get_milvus_service().delete_by_document_id(document_id)
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "删除文档时清理 Milvus 失败（已忽略）: document_id=%s",
+            document_id,
+        )
 
     object_storage.delete_file(document.file_path)
     db.delete(document)
@@ -230,8 +247,10 @@ def enqueue_document_processing(document_id: int) -> str | None:
 
 
 # 允许手动触发切片的状态（前端点击“切片”按钮时的可执行条件）
-CHUNKABLE_STATUSES = {"uploaded", "failed", "chunked"}
-# 正在处理中的状态（禁止重复触发）
+CHUNKABLE_STATUSES = {"uploaded", "failed", "chunked", "embedded"}
+# 允许手动触发向量化的状态（需已有切片；failed 用于 Embedding/Milvus 失败后重试）
+EMBEDDABLE_STATUSES = {"chunked", "embedded", "failed"}
+# 正在处理中的状态（禁止重复触发切片或向量化）
 PROCESSING_STATUSES = {"parsing", "chunking", "embedding"}
 
 
@@ -248,14 +267,15 @@ def start_document_chunking(db: Session, document_id: int) -> tuple[Document | N
     前置校验（按顺序）：
         1. 文档是否存在
         2. 文档是否正在处理中（parsing / chunking / embedding）→ 拒绝重复触发
-        3. 文档状态是否可切片（uploaded / failed / chunked）→ 不可切则返回错误
+        3. 文档状态是否可切片（uploaded / failed / chunked / embedded）→ 不可切则返回错误
 
     前端调用后：
         - 如果 task_id 不为 None，文档状态会被 Celery 任务更新为 "parsing"
-        - 前端应开始轮询文档状态接口，观察 status 是否变为 "chunked" 或 "failed"
+        - 前端点「刷新」观察 status 是否变为 "chunked" 或 "failed"（列表页不轮询）
 
     特别说明：
-        - 即使文档已经是 "chunked" 状态，也可以再次触发（用于重新切片/覆盖）
+        - 即使文档已经是 "chunked"/"embedded"，也可以再次触发（重新切片/覆盖）
+        - 重新切片后需再次点「向量化」才会更新 Milvus
         - 如果任务投递失败（如 Redis 不可用），会返回 error_message
     """
     document = get_document(db, document_id)
@@ -271,5 +291,54 @@ def start_document_chunking(db: Session, document_id: int) -> tuple[Document | N
     task_id = enqueue_document_processing(document.id)
     if task_id is None:
         return document, None, "切片任务投递失败，请检查 Redis 与 Celery Worker"
+
+    return document, task_id, None
+
+
+def enqueue_document_embedding(document_id: int) -> str | None:
+    """【内部工具】将文档向量化任务投递到 Celery 队列。
+
+    返回:
+        成功时为 Celery task_id；失败（如 Redis 不可用）为 None。
+    """
+    try:
+        from app.tasks.embedding_tasks import embed_document
+
+        async_result = embed_document.delay(document_id)
+        return async_result.id
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def start_document_embedding(db: Session, document_id: int) -> tuple[Document | None, str | None, str | None]:
+    """【前端手动触发向量化】启动 Embedding + 写入 Milvus 的异步任务。
+
+    状态预期：chunked/embedded/failed →（任务内）embedding → embedded | failed
+
+    返回值：
+        - document / task_id / error_message（与 start_document_chunking 同形）
+
+    前置校验：
+        1. 文档存在
+        2. 非处理中
+        3. 状态可向量化（chunked / embedded / failed）
+        4. chunk_count > 0（没有切片无法 Embedding）
+    """
+    document = get_document(db, document_id)
+    if document is None:
+        return None, None, "文档不存在"
+
+    if document.status in PROCESSING_STATUSES:
+        return document, None, "文档正在处理中，请稍后再试"
+
+    if document.status not in EMBEDDABLE_STATUSES:
+        return document, None, f"当前状态「{document.status}」不可向量化，请先完成切片"
+
+    if int(document.chunk_count or 0) <= 0:
+        return document, None, "文档没有切片，请先完成切片后再向量化"
+
+    task_id = enqueue_document_embedding(document.id)
+    if task_id is None:
+        return document, None, "向量化任务投递失败，请检查 Redis 与 Celery Worker"
 
     return document, task_id, None

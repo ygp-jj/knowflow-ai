@@ -11,7 +11,11 @@ celery_app = Celery(
     "knowflow",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
-    include=["app.tasks.document_tasks"],
+    # 切片 + 向量化任务均需被 Worker 加载；漏掉 include 会导致「收到任务却找不到」
+    include=[
+        "app.tasks.document_tasks",
+        "app.tasks.embedding_tasks",
+    ],
 )
 
 # Windows 不支持 prefork 进程池，默认改用 solo，避免 PermissionError / 句柄无效。
@@ -27,5 +31,6 @@ celery_app.conf.update(
     worker_pool=_worker_pool,
     task_routes={
         "app.tasks.document_tasks.process_document": {"queue": "documents"},
+        "app.tasks.embedding_tasks.embed_document": {"queue": "documents"},
     },
 )

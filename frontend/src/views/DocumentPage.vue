@@ -4,7 +4,7 @@
       <div>
         <h2 class="page-banner__title">文档管理</h2>
         <p class="page-banner__desc">
-          统一管理知识库下的文档上传、手动切片、状态查看、详情浏览、切片预览、重命名、下载和删除。
+          统一管理知识库下的文档上传、手动切片、向量化、状态查看、详情浏览、切片预览、重命名、下载和删除。
         </p>
       </div>
       <div class="page-banner__meta">
@@ -113,6 +113,14 @@
               >
                 {{ getChunkActionLabel(record) }}
               </AButton>
+              <AButton
+                type="link"
+                :disabled="!canStartEmbed(record) || Boolean(embeddingIds[record.id])"
+                :loading="Boolean(embeddingIds[record.id])"
+                @click="handleEmbed(record)"
+              >
+                {{ getEmbedActionLabel(record) }}
+              </AButton>
               <AButton type="link" @click="openRenameModal(record)">重命名</AButton>
               <AButton type="link" @click="handleDownload(record)">下载</AButton>
               <AButton danger type="link" @click="handleDelete(record)">删除</AButton>
@@ -164,6 +172,7 @@ import {
   createDocument,
   deleteDocument,
   downloadDocument,
+  embedDocument,
   fetchDocumentDetail,
   fetchDocumentList,
   updateDocument,
@@ -182,7 +191,7 @@ const columns = [
   { title: '切片数', dataIndex: 'chunk_count', key: 'chunk_count', width: 90 },
   { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 170 },
   { title: '更新时间', dataIndex: 'updated_at', key: 'updated_at', width: 170 },
-  { title: '操作', key: 'actions', width: 360, fixed: 'right' },
+  { title: '操作', key: 'actions', width: 430, fixed: 'right' },
 ];
 
 /** 当前页文档列表。 */
@@ -219,6 +228,8 @@ const detailVisible = ref(false);
 const renamingRecord = ref(null);
 /** 正在触发切片的文档 ID 集合。 */
 const chunkingIds = ref({});
+/** 正在触发向量化的文档 ID 集合。 */
+const embeddingIds = ref({});
 
 /** 分页配置对象。 */
 const pagination = computed(() => ({
@@ -451,7 +462,7 @@ async function handleRename(payload) {
  * @returns {boolean}
  */
 function canStartChunk(record) {
-  return ['uploaded', 'failed', 'chunked'].includes(record?.status);
+  return ['uploaded', 'failed', 'chunked', 'embedded'].includes(record?.status);
 }
 
 /**
@@ -460,13 +471,40 @@ function canStartChunk(record) {
  * @returns {string}
  */
 function getChunkActionLabel(record) {
-  if (record?.status === 'chunked') {
+  if (record?.status === 'chunked' || record?.status === 'embedded') {
     return '重新切片';
   }
   if (['parsing', 'chunking', 'embedding'].includes(record?.status)) {
     return '切片中';
   }
   return '切片';
+}
+
+/**
+ * 是否允许手动触发向量化（需已有切片）。
+ * @param {any} record 文档记录。
+ * @returns {boolean}
+ */
+function canStartEmbed(record) {
+  if (!['chunked', 'embedded', 'failed'].includes(record?.status)) {
+    return false;
+  }
+  return Number(record?.chunk_count || 0) > 0;
+}
+
+/**
+ * 向量化按钮文案。
+ * @param {any} record 文档记录。
+ * @returns {string}
+ */
+function getEmbedActionLabel(record) {
+  if (record?.status === 'embedded') {
+    return '重新向量化';
+  }
+  if (record?.status === 'embedding') {
+    return '向量化中';
+  }
+  return '向量化';
 }
 
 /**
@@ -500,6 +538,39 @@ async function handleChunk(record) {
     const nextChunkingIds = { ...chunkingIds.value };
     delete nextChunkingIds[record.id];
     chunkingIds.value = nextChunkingIds;
+  }
+}
+
+/**
+ * 手动触发文档向量化（不轮询；完成后点刷新查看 embedded / failed）。
+ * @param {any} record 当前文档记录。
+ * @returns {Promise<void>}
+ */
+async function handleEmbed(record) {
+  if (!canStartEmbed(record)) {
+    message.warning('当前状态不可向量化，请先完成切片');
+    return;
+  }
+
+  embeddingIds.value = {
+    ...embeddingIds.value,
+    [record.id]: true,
+  };
+
+  try {
+    await embedDocument(record.id);
+    message.success('向量化任务已提交，请稍后点击「刷新」查看结果');
+    await loadDocumentList({
+      page: page.value,
+      pageSize: pageSize.value,
+      knowledgeBaseId: selectedKnowledgeBaseId.value,
+    });
+  } catch (error) {
+    message.error(normalizeErrorMessage(error));
+  } finally {
+    const nextEmbeddingIds = { ...embeddingIds.value };
+    delete nextEmbeddingIds[record.id];
+    embeddingIds.value = nextEmbeddingIds;
   }
 }
 

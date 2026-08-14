@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     embedding_api_key: str                    # 密钥（必填）
     embedding_model: str                      # 模型名称（必填）
     embedding_dimension: int = 1024           # 向量维度
+    embedding_batch_size: int = 10            # 单次 Embedding 条数；百炼 text-embedding-v3 上限为 10
 
     # ========== RAG 检索参数 ==========
     rag_top_k: int = 5                        # 检索返回的文档块数量

@@ -60,6 +60,15 @@ class DocumentsApiTests(unittest.TestCase):
             return_value="fake-task-id",
         )
         self.mock_enqueue = self.enqueue_patcher.start()
+        self.embed_enqueue_patcher = patch(
+            "app.services.document_service.enqueue_document_embedding",
+            return_value="fake-embed-task-id",
+        )
+        self.mock_embed_enqueue = self.embed_enqueue_patcher.start()
+        # 删除文档会 best-effort 清 Milvus；单测不连真实服务，避免超时拖慢
+        self.milvus_patcher = patch("app.services.milvus_service.get_milvus_service")
+        self.mock_milvus = self.milvus_patcher.start()
+        self.mock_milvus.return_value.delete_by_document_id.return_value = None
 
         def override_get_db():
             db = self.SessionLocal()
@@ -76,6 +85,8 @@ class DocumentsApiTests(unittest.TestCase):
         self.client = TestClient(app)
 
     def tearDown(self):
+        self.milvus_patcher.stop()
+        self.embed_enqueue_patcher.stop()
         self.enqueue_patcher.stop()
         app.dependency_overrides.clear()
         Base.metadata.drop_all(bind=self.engine)
@@ -229,6 +240,56 @@ class DocumentsApiTests(unittest.TestCase):
         body = response.json()
         self.assertEqual(body["code"], 400)
         self.assertIn("正在处理中", body["message"])
+
+    def test_manual_embed_endpoint_enqueues_task(self):
+        """chunked 且有切片时，POST /embed 应投递向量化任务。"""
+        create_response = self.client.post(
+            "/api/v1/documents/create",
+            data={"knowledge_base_id": "1"},
+            files={"file": ("embed.txt", io.BytesIO(b"hello"), "text/plain")},
+        )
+        document_id = create_response.json()["data"]["id"]
+
+        db = self.SessionLocal()
+        document = db.query(Document).filter(Document.id == document_id).first()
+        document.status = "chunked"
+        document.chunk_count = 2
+        db.add(
+            DocumentChunk(
+                document_id=document_id,
+                knowledge_base_id=1,
+                chunk_index=0,
+                content="chunk-a",
+                content_hash="a" * 64,
+                token_count=1,
+            )
+        )
+        db.commit()
+        db.close()
+
+        self.mock_embed_enqueue.reset_mock()
+        response = self.client.post("/api/v1/documents/embed", json={"id": document_id})
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["code"], 0)
+        self.assertEqual(body["data"]["id"], document_id)
+        self.assertEqual(body["data"]["task_id"], "fake-embed-task-id")
+        self.mock_embed_enqueue.assert_called_once_with(document_id)
+
+    def test_manual_embed_rejects_uploaded_without_chunks(self):
+        """未切片文档不可向量化。"""
+        create_response = self.client.post(
+            "/api/v1/documents/create",
+            data={"knowledge_base_id": "1"},
+            files={"file": ("nochunk.txt", io.BytesIO(b"hello"), "text/plain")},
+        )
+        document_id = create_response.json()["data"]["id"]
+
+        response = self.client.post("/api/v1/documents/embed", json={"id": document_id})
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["code"], 400)
+        self.assertIn("不可向量化", body["message"])
 
 
 if __name__ == "__main__":

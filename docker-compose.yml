@@ -43,7 +43,7 @@ services:
       - minio_data:/minio_data
 
   milvus:
-    image: milvusdb/milvus:v2.5.10
+    image: milvusdb/milvus:v2.4.15
     container_name: knowflow-milvus
     command: ["milvus", "run", "standalone"]
     environment:

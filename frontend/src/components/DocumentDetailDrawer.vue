@@ -85,6 +85,7 @@
                 <span>页码：{{ chunk.page_number ?? '—' }}</span>
                 <span>Token：{{ chunk.token_count ?? 0 }}</span>
                 <span>ID：{{ chunk.id }}</span>
+                <span>父块：{{ chunk.parent_chunk_id ?? '—' }}</span>
               </div>
               <pre class="chunk-card__content">{{ chunk.content }}</pre>
             </article>

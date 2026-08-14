@@ -47,6 +47,15 @@ class DocumentChunk(Base):
         index=True,
     )
 
+    # 父切片 ID（自关联）。大标题（章/条等）为 NULL；子块指向所属父标题块。
+    # 检索命中父块后，可按此字段继续拉取子块正文。
+    parent_chunk_id = Column(
+        Integer,
+        ForeignKey("document_chunks.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # ------------------------------------------------
     # 切片内容字段（前端最关心的数据）
     # ------------------------------------------------

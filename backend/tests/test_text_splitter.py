@@ -9,6 +9,7 @@ from app.services.text_splitter import (
     DEFAULT_CHUNK_OVERLAP,
     DEFAULT_CHUNK_SIZE,
     DEFAULT_TITLE_STANDALONE,
+    detect_chunk_profile,
     split_pages_to_chunks,
     split_text,
 )
@@ -197,6 +198,236 @@ class TextSplitterTests(unittest.TestCase):
         self.assertEqual(len(merged_chunks), 1)
         self.assertIn("二、审批路径说明", merged_chunks[0]["content"])
         self.assertIn("结合公司制度执行", merged_chunks[0]["content"])
+
+    def test_digit_item_keeps_following_bullet_list_together(self):
+        """数字编号条目应与紧随其后的子列表同块，避免「1. 申请」与「- 事假…」拆开。"""
+
+        pages = [{
+            "page_number": None,
+            "content": (
+                "第十五条 请假流程\n"
+                "1. 申请：员工须提前填写《请假申请单》，注明请假类别、起止时间、事由等。\n"
+                "- 事假须至少提前1天申请；\n"
+                "- 年休假须提前3天申请；\n"
+                "- 婚假、产假须提前15天申请；\n"
+                "- 病假、工伤假、丧假等突发情况可事后补办手续，但须在返岗后第一个工作日内补齐。\n"
+                "2. 审批：按审批权限逐级审批。\n"
+                "3. 备案：审批完成后，《请假申请单》由人力资源部门存档。"
+            ),
+        }]
+        chunks = split_pages_to_chunks(pages, chunk_size=256, chunk_overlap=50, title_standalone=True)
+
+        article = next(item for item in chunks if item["content"].strip() == "第十五条 请假流程")
+        apply_chunks = [item for item in chunks if "1. 申请" in item["content"]]
+        self.assertEqual(len(apply_chunks), 1)
+        apply_text = apply_chunks[0]["content"]
+        self.assertIn("事假须至少提前1天申请", apply_text)
+        self.assertIn("年休假须提前3天申请", apply_text)
+        self.assertIn("返岗后第一个工作日内补齐", apply_text)
+        self.assertNotIn("2. 审批", apply_text)
+        self.assertEqual(apply_chunks[0].get("parent_chunk_index"), article["chunk_index"])
+
+        self.assertTrue(any(item["content"].startswith("2. 审批") for item in chunks))
+        self.assertTrue(any(item["content"].startswith("3. 备案") for item in chunks))
+
+    def test_hierarchy_stops_digit_item_before_next_article(self):
+        """层级切分：数字分点不得吞并后续「第X条」；子块挂父块 index。"""
+
+        pages = [{
+            "page_number": None,
+            "content": (
+                "第四章 请假流程\n"
+                "第十五条 请假流程\n"
+                "4. 销假：请假结束返岗后，须在当天向直属主管销假，并在系统中确认销假状态。\n"
+                "第十六条 请假期间的交接\n"
+                "员工请假超过3天的，须完成工作交接并指定代理人，交接内容应书面确认。\n"
+                "第五章 违纪处理\n"
+                "第十七条 以下情形按旷工处理："
+            ),
+        }]
+        chunks = split_pages_to_chunks(pages, chunk_size=256, chunk_overlap=50, title_standalone=True)
+        by_content = {item["content"]: item for item in chunks}
+
+        chapter4 = by_content["第四章 请假流程"]
+        article15 = by_content["第十五条 请假流程"]
+        cancel = next(item for item in chunks if item["content"].startswith("4. 销假"))
+        article16 = by_content["第十六条 请假期间的交接"]
+        body16 = next(item for item in chunks if "工作交接" in item["content"])
+        chapter5 = by_content["第五章 违纪处理"]
+
+        self.assertIsNone(chapter4.get("parent_chunk_index"))
+        self.assertEqual(article15.get("parent_chunk_index"), chapter4["chunk_index"])
+        self.assertEqual(cancel.get("parent_chunk_index"), article15["chunk_index"])
+        self.assertNotIn("第十六条", cancel["content"])
+        self.assertEqual(article16.get("parent_chunk_index"), chapter4["chunk_index"])
+        self.assertEqual(body16.get("parent_chunk_index"), article16["chunk_index"])
+        self.assertIsNone(chapter5.get("parent_chunk_index"))
+        self.assertTrue(any("第十七条" in item["content"] for item in chunks))
+
+        self.assertEqual(chapter4["metadata"].get("section_level"), 1)
+        self.assertEqual(article15["metadata"].get("section_level"), 2)
+        self.assertEqual(cancel["metadata"].get("section_level"), 4)
+
+    def test_notice_cn_item_parents_digit_children(self):
+        """通知类文档：一/二拆开；1/2/3 挂在对应「三、」「四、」父块下。"""
+
+        pages = [{
+            "page_number": 1,
+            "content": (
+                "关于2026年春节放假及调休安排的通知\n"
+                "全体员工：\n"
+                "根据国务院办公厅通知精神，现将有关事项通知如下一、放假时间 "
+                "2026年2月14日至2月22日放假，共计9天，2月23日（星期一）正常上班。"
+                "二、调休安排 2月7日（周六）、2月28日（周六）为正常上班日。"
+                "三、请假衔接说明\n"
+                "1. 如需提前离岗请走OA申请。\n"
+                "2. 事假期间不计薪。\n"
+                "3. 假期值班由综合管理部统筹。\n"
+                "四、温馨提示\n"
+                "1. 负责人确认放假去向。\n"
+                "2. 保持手机畅通。\n"
+                "3. 返岗首日按时打卡。"
+            ),
+        }]
+        chunks = split_pages_to_chunks(pages, chunk_size=256, chunk_overlap=50, title_standalone=True)
+        by_title = {
+            item["content"]: item for item in chunks
+            if item["content"] in {
+                "一、放假时间", "二、调休安排", "三、请假衔接说明", "四、温馨提示",
+            }
+        }
+
+        self.assertIn("一、放假时间", by_title)
+        self.assertIn("二、调休安排", by_title)
+        merged = next(
+            (
+                item for item in chunks
+                if "一、放假时间" in item["content"] and "二、调休安排" in item["content"]
+            ),
+            None,
+        )
+        self.assertIsNone(merged)
+
+        section3 = by_title["三、请假衔接说明"]
+        section4 = by_title["四、温馨提示"]
+        children3 = [item for item in chunks if item.get("parent_chunk_index") == section3["chunk_index"]]
+        children4 = [item for item in chunks if item.get("parent_chunk_index") == section4["chunk_index"]]
+        self.assertTrue(any(item["content"].startswith("1.") for item in children3))
+        self.assertTrue(any(item["content"].startswith("2.") for item in children3))
+        self.assertTrue(any(item["content"].startswith("3.") for item in children3))
+        self.assertTrue(any(item["content"].startswith("1.") for item in children4))
+
+        body1 = next(item for item in chunks if "2月14日至2月22日" in item["content"])
+        self.assertEqual(body1.get("parent_chunk_index"), by_title["一、放假时间"]["chunk_index"])
+
+    def test_detect_chunk_profile_diary_vs_policy(self):
+        """日记标签为强信号；制度编号为 policy；仅日期且无制度结构也可 diary。"""
+
+        diary_with_label = [{
+            "page_number": 1,
+            "content": (
+                "能好好工作、好好生活，也是一种幸运。\n"
+                "今日反思：想做的事情太多。\n"
+                "今日金句：慢慢来，一件一件实现。"
+            ),
+        }]
+        diary_date_only = [{
+            "page_number": 1,
+            "content": "2026年7月17日（周五）\n今天心情一般，随便写两句。\n明天继续。",
+        }]
+        policy_pages = [{
+            "page_number": 1,
+            "content": "第三章 请假审批权限\n第十三条 审批权限\n1. 申请：提交表单",
+        }]
+        self.assertEqual(detect_chunk_profile(diary_with_label), "diary")
+        self.assertEqual(detect_chunk_profile(diary_date_only), "diary")
+        self.assertEqual(detect_chunk_profile(policy_pages), "policy")
+
+    def test_diary_sections_split_without_date_header(self):
+        """无日期行但含今日反思/金句时，也应按日记切开，避免并进同一正文块。"""
+
+        pages = [{
+            "page_number": None,
+            "content": (
+                "我已经开始幻想拿一个月的赔偿金出去玩一圈。\n"
+                "当然，这些目前也只是一个美好的夙愿。\n"
+                "能不被裁员当然最好，能好好工作、好好生活，也是一种幸运。\n"
+                "今日反思：\n"
+                "我意识到，我的问题可能不是没有精力，而是想做的事情太多。\n"
+                "和之前相比，我开始明白，真正的坚持不一定来自强迫自己。\n"
+                "人生还有很多想去的地方、想做的事情，不必急着一次完成。\n"
+                "今日金句：\n"
+                "想做的事情很多没关系，人生还有很长，慢慢来，一件一件实现。"
+            ),
+        }]
+        self.assertEqual(detect_chunk_profile(pages), "diary")
+        chunks = split_pages_to_chunks(pages, chunk_size=256, chunk_overlap=50, chunk_profile="auto")
+
+        reflection = next(item for item in chunks if item["content"].strip() == "今日反思：")
+        golden = next(item for item in chunks if item["content"].strip() == "今日金句：")
+        self.assertTrue(any("我意识到，我的问题可能不是没有精力" in item["content"] for item in chunks))
+        self.assertTrue(any("想做的事情很多没关系" in item["content"] for item in chunks))
+
+        # 反思/金句不得仍埋在同一大段正文里
+        for item in chunks:
+            if "当然，这些目前也只是一个美好的夙愿" in item["content"]:
+                self.assertNotIn("今日反思", item["content"])
+                self.assertNotIn("今日金句", item["content"])
+
+        reflection_children = [
+            item for item in chunks
+            if item.get("parent_chunk_index") == reflection["chunk_index"]
+        ]
+        golden_children = [
+            item for item in chunks
+            if item.get("parent_chunk_index") == golden["chunk_index"]
+        ]
+        self.assertGreaterEqual(len(reflection_children), 1)
+        self.assertGreaterEqual(len(golden_children), 1)
+
+    def test_diary_profile_chunks_under_date_parent(self):
+        """日记：日期为父块；正文/反思/金句挂在日期或小节下。"""
+
+        pages = [{
+            "page_number": 1,
+            "content": (
+                "2026 年 7 月 17 日 | 周五\n"
+                "今天我去见了一个人，聊了很多。\n"
+                "回来后觉得表达欲和表达能力不是一回事。\n"
+                "今日反思：说话之前先想清楚自己真正想表达什么，而不是急着证明自己。\n"
+                "今日金句：表达欲，不等于表达能力。"
+            ),
+        }]
+        chunks = split_pages_to_chunks(pages, chunk_size=256, chunk_overlap=50, chunk_profile="auto")
+        self.assertTrue(all(item["metadata"].get("chunk_profile") == "diary" for item in chunks))
+
+        date_chunk = next(item for item in chunks if "2026" in item["content"] and "周五" in item["content"])
+        self.assertIsNone(date_chunk.get("parent_chunk_index"))
+        self.assertEqual(date_chunk["metadata"].get("section_level"), 1)
+
+        body_chunks = [
+            item for item in chunks
+            if item.get("parent_chunk_index") == date_chunk["chunk_index"]
+            and not item["content"].startswith("今日")
+        ]
+        # 正文按段落切开，至少两段叙事各自成块
+        self.assertGreaterEqual(len(body_chunks), 2)
+        self.assertTrue(any("今天我去见了一个人" in item["content"] for item in body_chunks))
+        self.assertTrue(any("表达欲和表达能力不是一回事" in item["content"] for item in body_chunks))
+        self.assertTrue(
+            all(item["metadata"].get("boundary_type") == "diary_paragraph" for item in body_chunks)
+        )
+
+        reflection = next(item for item in chunks if item["content"].startswith("今日反思"))
+        golden = next(item for item in chunks if item["content"].startswith("今日金句"))
+        self.assertEqual(reflection.get("parent_chunk_index"), date_chunk["chunk_index"])
+        self.assertEqual(golden.get("parent_chunk_index"), date_chunk["chunk_index"])
+
+        reflection_body = [
+            item for item in chunks
+            if item.get("parent_chunk_index") == reflection["chunk_index"]
+        ]
+        self.assertTrue(any("说话之前先想清楚" in item["content"] for item in reflection_body))
 
 
 if __name__ == "__main__":

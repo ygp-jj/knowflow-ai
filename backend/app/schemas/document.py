@@ -58,6 +58,7 @@ class DocumentChunkRead(BaseModel):
 
     id: int
     document_id: int
+    parent_chunk_id: Optional[int] = None
     chunk_index: int
     content: str
     page_number: Optional[int]

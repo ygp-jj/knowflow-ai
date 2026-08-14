@@ -113,15 +113,19 @@ def chunks(
     document_id: int = Query(..., gt=0),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=10, ge=1, le=100),
+    parent_id: int | None = Query(default=None, gt=0, description="可选；传入则只返回该父块下的子块"),
     db: Session = Depends(get_db),
 ):
-    """分页查询文档切片列表。"""
+    """分页查询文档切片列表。
+
+    支持 parent_id：命中父块后，用同一接口继续查询其子块。
+    """
 
     document = get_document(db, document_id)
     if document is None:
         return error_response(404, "文档不存在")
 
-    items, total = list_chunks(db, document_id, page, page_size)
+    items, total = list_chunks(db, document_id, page, page_size, parent_id=parent_id)
     data = {
         "items": [DocumentChunkRead.model_validate(item) for item in items],
         "total": total,

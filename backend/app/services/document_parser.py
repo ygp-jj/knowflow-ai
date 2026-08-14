@@ -6,8 +6,12 @@
 """
 
 from pathlib import Path
+from typing import Iterator
 
 from docx import Document as DocxDocument
+from docx.oxml.ns import qn
+from docx.table import Table
+from docx.text.paragraph import Paragraph
 from pypdf import PdfReader
 
 
@@ -28,7 +32,7 @@ def parse_document(file_path: str) -> list[dict]:
 
     支持格式：
         - PDF (.pdf)：逐页提取文字
-        - Word (.docx / .doc)：提取全部段落，【合并为一页】
+        - Word (.docx / .doc)：按文档顺序提取段落与表格，【合并为一页】
         - 纯文本 (.md / .txt / .markdown)：读取全文，【合并为一页】
 
     返回数据结构：
@@ -82,20 +86,74 @@ def parse_pdf(file_path: str) -> list[dict]:
     return pages
 
 
+def _iter_docx_blocks(document: DocxDocument) -> Iterator[Paragraph | Table]:
+    """按 Word 正文顺序产出段落与表格。
+
+    python-docx 的 ``document.paragraphs`` 不含表格内文字；
+    必须遍历 body 子节点，才能保留「标题 → 表格 → 下一段」的阅读顺序。
+    """
+    body = document.element.body
+    for child in body.iterchildren():
+        if child.tag == qn("w:p"):
+            yield Paragraph(child, document)
+        elif child.tag == qn("w:tbl"):
+            yield Table(child, document)
+
+
+def _cell_text(cell) -> str:
+    """提取单元格纯文本；多段用空格拼接，去掉首尾空白。"""
+    parts = [paragraph.text.strip() for paragraph in cell.paragraphs if paragraph.text.strip()]
+    return " ".join(parts).replace("\n", " ").strip()
+
+
+def _table_to_text(table: Table) -> str:
+    """将 Word 表格转为可读纯文本（列用 | 分隔，行用换行分隔）。
+
+    合并单元格时 python-docx 会对同一 ``w:tc`` 重复返回，这里按底层节点去重，
+    避免同一格文字在一行中出现多次。
+    """
+    rows: list[str] = []
+    for row in table.rows:
+        cells: list[str] = []
+        seen_tc: set[int] = set()
+        for cell in row.cells:
+            tc_id = id(cell._tc)
+            if tc_id in seen_tc:
+                continue
+            seen_tc.add(tc_id)
+            cells.append(_cell_text(cell))
+        if any(cells):
+            rows.append(" | ".join(cells))
+    return "\n".join(rows)
+
+
 def parse_docx(file_path: str) -> list[dict]:
-    """解析 Word 文档，拼接非空段落。
+    """解析 Word 文档：按文档顺序拼接段落与表格文本。
 
     对 Word 的处理逻辑：
-        1. 遍历所有段落，过滤掉空行
-        2. 用换行符拼接所有有效段落
-        3. 整个文档合并为【一段】文本（无分页概念）
+        1. 按正文顺序遍历段落与表格（不再只用 document.paragraphs）
+        2. 表格转为「列用 |、行用换行」的纯文本，避免审批表等结构化内容丢失
+        3. 过滤空段落后用换行符拼接
+        4. 整个文档合并为【一段】文本（无分页概念）
 
     前端展示建议：
         由于 Word 没有明确的页码边界，后续切片（split_text）会按字符数切分。
         前端如果展示来源，一般显示为“全文”而不是“第 X 页”。
     """
     document = DocxDocument(file_path)
-    text = "\n".join(paragraph.text for paragraph in document.paragraphs if paragraph.text.strip())
+    parts: list[str] = []
+    for block in _iter_docx_blocks(document):
+        if isinstance(block, Paragraph):
+            text = block.text.strip()
+            if text:
+                parts.append(text)
+            continue
+
+        table_text = _table_to_text(block)
+        if table_text:
+            parts.append(table_text)
+
+    text = "\n".join(parts)
     return [{"page_number": None, "content": text}]   # 页码置空，表示没有分页信息
 
 

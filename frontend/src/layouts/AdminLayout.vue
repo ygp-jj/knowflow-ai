@@ -34,6 +34,12 @@
           </template>
           <span>文档管理</span>
         </AMenuItem>
+        <AMenuItem key="chat" @click="navigateTo('chat')">
+          <template #icon>
+            <MessageOutlined />
+          </template>
+          <span>智能问答</span>
+        </AMenuItem>
       </AMenu>
     </ALayoutSider>
 
@@ -68,6 +74,7 @@ import {
   FileTextOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  MessageOutlined,
 } from '@ant-design/icons-vue';
 import { DEFAULT_OWNER_ID } from '@/constants/app';
 

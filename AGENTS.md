@@ -109,6 +109,16 @@ function handleClick() {
 - 列表页仍不做状态轮询；用户点击「刷新」查看 `embedding` / `embedded` / `failed`。
 - 父块与子块均需写入向量，便于后续检索命中父块后再扩子块。
 
+## 后端检索问答约定（MVP）
+
+- **无会话单次问答**：`POST /api/v1/chat/ask`，请求体 `{ "knowledge_base_id": 1, "question": "..." }`。
+- 流程：问题 Embedding → Milvus Top-K（按知识库过滤）→ 父子块扩展 → 拼上下文 → DeepSeek 生成。
+- 统一响应 `{ "code": 0, "message": "success", "data": { "answer", "question", "knowledge_base_id", "references" } }`。
+- 无命中时 `code=0`，`answer` 为友好提示，`references` 为空数组。
+- 本阶段不做多轮会话落库、不做流式输出。
+- 参数：`RAG_TOP_K` / `RAG_SCORE_THRESHOLD` / `RAG_MAX_CONTEXT_CHARS`（COSINE 下 score 越大越相似，过滤 `>= threshold`）。
+- 设计说明：`docs/superpowers/specs/2026-08-14-rag-chat-mvp-design.md`
+
 ## 后端文档解析与切片约定（第 3 阶段 / 方案 A）
 
 - **上传不自动切片**：`POST /create` 仅落库并设为 `uploaded`。

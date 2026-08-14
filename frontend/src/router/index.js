@@ -4,6 +4,7 @@
 import { createRouter, createWebHistory } from 'vue-router';
 
 import AdminLayout from '@/layouts/AdminLayout.vue';
+import ChatPage from '@/views/ChatPage.vue';
 import DocumentPage from '@/views/DocumentPage.vue';
 import KnowledgeBasePage from '@/views/KnowledgeBasePage.vue';
 
@@ -28,6 +29,14 @@ const routes = [
         component: DocumentPage,
         meta: {
           title: '文档管理',
+        },
+      },
+      {
+        path: 'chat',
+        name: 'chat',
+        component: ChatPage,
+        meta: {
+          title: '智能问答',
         },
       },
     ],

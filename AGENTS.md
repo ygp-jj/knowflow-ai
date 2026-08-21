@@ -119,8 +119,8 @@ function handleClick() {
 - 本阶段不做多轮会话落库（5B）；保留 `/chat/ask` 作调试与兼容。
 - 参数：`RAG_TOP_K` / `RAG_SCORE_THRESHOLD` / `RAG_MAX_CONTEXT_CHARS`（COSINE 下 score 越大越相似，过滤 `>= threshold`）。
 - 设计说明：
-  - `docs/superpowers/specs/2026-08-14-rag-chat-mvp-design.md`
-  - `docs/superpowers/specs/2026-08-21-chat-stream-session-design.md`
+  - `backend/docs/2026-08-14-rag-chat-mvp-design.md`
+  - `backend/docs/2026-08-21-chat-stream-session-design.md`
 
 ## 后端文档解析与切片约定（第 3 阶段 / 方案 A）
 
@@ -136,7 +136,7 @@ function handleClick() {
 - 接口路径维持现有风格（决策 C）：业务 id 不写进 URL 路径段。
 - 切片列表接口：`GET /api/v1/documents/chunks?document_id=<id>&page=1&page_size=10`。
 - 详细设计与任务拆分见：
-  - `docs/chunking-service-requirements.md`
-  - `docs/phase3-document-parse-chunk-design.md`
+  - `backend/docs/chunking-service-requirements.md`
+  - `backend/docs/phase3-document-parse-chunk-design.md`
   - `docs/phase3-document-parse-chunk-plan.md`
   - `docs/phase3-document-parse-chunk-usage.md`

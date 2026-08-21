@@ -19,14 +19,21 @@ class LLMServiceTests(unittest.TestCase):
         text = service.chat([{"role": "user", "content": "hi"}])
         self.assertEqual(text, "你好")
 
-    def test_chat_empty_choices_raises(self):
+    def test_chat_stream_yields_deltas(self):
         client = MagicMock()
-        response = MagicMock()
-        response.choices = []
-        client.chat.completions.create.return_value = response
+
+        def _chunks():
+            for text in ["你", "好"]:
+                choice = MagicMock()
+                choice.delta.content = text
+                chunk = MagicMock()
+                chunk.choices = [choice]
+                yield chunk
+
+        client.chat.completions.create.return_value = _chunks()
         service = LLMService(client=client, model="deepseek-chat")
-        with self.assertRaises(LLMServiceError):
-            service.chat([{"role": "user", "content": "hi"}])
+        parts = list(service.chat_stream([{"role": "user", "content": "hi"}]))
+        self.assertEqual(parts, ["你", "好"])
 
 
 if __name__ == "__main__":

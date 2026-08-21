@@ -140,6 +140,43 @@ class RagServiceTests(unittest.TestCase):
         self.assertIn("直属主管审批", user_msg)
         db.close()
 
+    def test_stream_events_order(self):
+        """流式应先 references，再 token，最后 done。"""
+        from app.services.rag_service import iter_ask_knowledge_base_events
+
+        db = self.SessionLocal()
+        embedder = MagicMock()
+        embedder.embed_query.return_value = [0.1] * 8
+        milvus = MagicMock()
+        milvus.search.return_value = [
+            {
+                "chunk_id": self.parent_id,
+                "document_id": self.doc_id,
+                "chunk_index": 0,
+                "content": "请假制度",
+                "score": 0.9,
+            }
+        ]
+        llm = MagicMock()
+        llm.chat_stream.return_value = iter(["答", "案"])
+
+        events = list(
+            iter_ask_knowledge_base_events(
+                db,
+                knowledge_base_id=1,
+                question="请假找谁",
+                embedding_service=embedder,
+                milvus_service=milvus,
+                llm_service=llm,
+                score_threshold=0.3,
+            )
+        )
+        self.assertEqual(events[0]["event"], "references")
+        self.assertEqual(events[1], {"event": "token", "text": "答"})
+        self.assertEqual(events[2], {"event": "token", "text": "案"})
+        self.assertEqual(events[-1], {"event": "done", "ok": True})
+        db.close()
+
 
 if __name__ == "__main__":
     unittest.main()

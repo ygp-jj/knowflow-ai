@@ -111,13 +111,16 @@ function handleClick() {
 
 ## 后端检索问答约定（MVP）
 
-- **无会话单次问答**：`POST /api/v1/chat/ask`，请求体 `{ "knowledge_base_id": 1, "question": "..." }`。
+- **无会话单次问答（非流式兜底）**：`POST /api/v1/chat/ask`，请求体 `{ "knowledge_base_id": 1, "question": "..." }`。
+- **无会话流式问答（5A）**：`POST /api/v1/chat/ask-stream`，SSE 事件：`references` → `token*` → `done` / `error`。
 - 流程：问题 Embedding → Milvus Top-K（按知识库过滤）→ 父子块扩展 → 拼上下文 → DeepSeek 生成。
-- 统一响应 `{ "code": 0, "message": "success", "data": { "answer", "question", "knowledge_base_id", "references" } }`。
-- 无命中时 `code=0`，`answer` 为友好提示，`references` 为空数组。
-- 本阶段不做多轮会话落库、不做流式输出。
+- 非流式统一响应 `{ "code": 0, "message": "success", "data": { "answer", "question", "knowledge_base_id", "references" } }`。
+- 无命中时友好提示；流式同样先推空 references 再推提示文本。
+- 本阶段不做多轮会话落库（5B）；保留 `/chat/ask` 作调试与兼容。
 - 参数：`RAG_TOP_K` / `RAG_SCORE_THRESHOLD` / `RAG_MAX_CONTEXT_CHARS`（COSINE 下 score 越大越相似，过滤 `>= threshold`）。
-- 设计说明：`docs/superpowers/specs/2026-08-14-rag-chat-mvp-design.md`
+- 设计说明：
+  - `docs/superpowers/specs/2026-08-14-rag-chat-mvp-design.md`
+  - `docs/superpowers/specs/2026-08-21-chat-stream-session-design.md`
 
 ## 后端文档解析与切片约定（第 3 阶段 / 方案 A）
 

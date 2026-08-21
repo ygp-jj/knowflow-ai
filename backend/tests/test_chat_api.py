@@ -83,6 +83,27 @@ class ChatApiTests(unittest.TestCase):
         self.assertEqual(body["code"], 404)
         self.assertIsNone(body["data"])
 
+    @patch("app.api.v1.chat.iter_ask_knowledge_base_events")
+    def test_ask_stream_sse_shape(self, mock_iter):
+        mock_iter.return_value = iter(
+            [
+                {"event": "references", "references": []},
+                {"event": "token", "text": "你好"},
+                {"event": "done", "ok": True},
+            ]
+        )
+        response = self.client.post(
+            "/api/v1/chat/ask-stream",
+            json={"knowledge_base_id": 1, "question": "问题"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/event-stream", response.headers.get("content-type", ""))
+        body = response.text
+        self.assertIn("event: references", body)
+        self.assertIn("event: token", body)
+        self.assertIn("event: done", body)
+        self.assertIn("你好", body)
+
 
 if __name__ == "__main__":
     unittest.main()

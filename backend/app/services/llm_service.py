@@ -69,6 +69,36 @@ class LLMService:
             raise LLMServiceError("LLM 返回空文本")
         return content
 
+    def chat_stream(self, messages: list[dict[str, Any]], *, temperature: float = 0.2):
+        """流式生成助手文本，逐段 yield 增量字符串。
+
+        参数:
+            messages: OpenAI 风格消息列表。
+            temperature: 采样温度。
+
+        产出:
+            非空增量文本片段（可能是单字或短词，取决于上游）。
+        """
+        try:
+            stream = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=temperature,
+                stream=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("LLM 流式请求失败: model=%s", self.model)
+            raise LLMServiceError(f"LLM 流式请求失败: {exc}") from exc
+
+        for chunk in stream:
+            choices = getattr(chunk, "choices", None) or []
+            if not choices:
+                continue
+            delta = getattr(choices[0], "delta", None)
+            text = getattr(delta, "content", None) if delta is not None else None
+            if text:
+                yield text
+
 
 def get_llm_service() -> LLMService:
     """获取默认 LLMService 实例。"""

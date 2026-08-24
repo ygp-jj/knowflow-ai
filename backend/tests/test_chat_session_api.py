@@ -14,7 +14,7 @@ from app.models.chat import ChatMessage, ChatSession
 from app.models.knowledge_base import KnowledgeBase
 from app.models.user import User
 from app.schemas.chat import ChatReference, DEFAULT_SESSION_TITLE
-from app.services.rag_service import NO_HIT_ANSWER, iter_session_ask_events
+from app.services.rag_service import NO_HIT_ANSWER, SessionStreamGate, iter_session_ask_events
 
 
 class ChatSessionApiTests(unittest.TestCase):
@@ -219,6 +219,185 @@ class ChatSessionApiTests(unittest.TestCase):
             )
         session = db.query(ChatSession).filter(ChatSession.id == session_id).first()
         self.assertEqual(session.title, "固定标题")
+        db.close()
+
+    @patch("app.services.rag_service.prepare_retrieval")
+    @patch("app.services.rag_service.get_llm_service")
+    def test_stream_interrupted_no_assistant(self, mock_get_llm, mock_prepare):
+        """模拟流式中途中断：只落 user，不落 assistant。"""
+        from app.services.rag_service import RetrievalBundle
+
+        create_resp = self.client.post(
+            "/api/v1/chat/sessions/create",
+            json={"user_id": 101, "knowledge_base_id": 201},
+        )
+        session_id = create_resp.json()["data"]["id"]
+
+        mock_prepare.return_value = RetrievalBundle(
+            question="中断测试",
+            knowledge_base_id=201,
+            messages=None,
+            references=[],
+            no_hit_answer=None,
+            context="上下文",
+        )
+
+        def _stream_then_stop():
+            yield "半"
+            yield "截"
+
+        llm = MagicMock()
+        llm.chat_stream.return_value = _stream_then_stop()
+        mock_get_llm.return_value = llm
+
+        db = self.SessionLocal()
+        gen = iter_session_ask_events(
+            db,
+            session_id=session_id,
+            user_id=101,
+            question="中断测试",
+            llm_service=llm,
+        )
+        # 消费到第一个 token 后关闭生成器，模拟 Abort / 连接断开
+        next(gen)
+        next(gen)
+        gen.close()
+
+        messages = (
+            db.query(ChatMessage)
+            .filter(ChatMessage.session_id == session_id)
+            .order_by(ChatMessage.id)
+            .all()
+        )
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0].role, "user")
+        self.assertEqual(messages[0].content, "中断测试")
+        db.close()
+
+    @patch("app.services.rag_service.prepare_retrieval")
+    @patch("app.services.rag_service.get_llm_service")
+    def test_stream_gate_abort_after_tokens_no_assistant(self, mock_get_llm, mock_prepare):
+        """LLM 已产出全部 token 但客户端在落库前停止：不落 assistant。"""
+        from app.services.rag_service import RetrievalBundle
+
+        create_resp = self.client.post(
+            "/api/v1/chat/sessions/create",
+            json={"user_id": 101, "knowledge_base_id": 201},
+        )
+        session_id = create_resp.json()["data"]["id"]
+        mock_prepare.return_value = RetrievalBundle(
+            question="停止测试",
+            knowledge_base_id=201,
+            messages=None,
+            references=[],
+            no_hit_answer=None,
+            context="上下文",
+        )
+        llm = MagicMock()
+        llm.chat_stream.return_value = iter(["根据现有资料", "无法确定"])
+        mock_get_llm.return_value = llm
+
+        db = self.SessionLocal()
+        gate = SessionStreamGate()
+        gen = iter_session_ask_events(
+            db,
+            session_id=session_id,
+            user_id=101,
+            question="停止测试",
+            llm_service=llm,
+            persist_gate=gate,
+        )
+        next(gen)  # references
+        next(gen)  # token 1
+        next(gen)  # token 2
+        gate.abort()
+        gen.close()
+
+        messages = (
+            db.query(ChatMessage)
+            .filter(ChatMessage.session_id == session_id)
+            .order_by(ChatMessage.id)
+            .all()
+        )
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0].role, "user")
+        db.close()
+
+    @patch("app.services.rag_service.prepare_retrieval")
+    def test_stream_gate_abort_no_hit_no_assistant(self, mock_prepare):
+        """无命中提示已推送 token，但客户端停止：不落 assistant。"""
+        from app.services.rag_service import RetrievalBundle
+
+        create_resp = self.client.post(
+            "/api/v1/chat/sessions/create",
+            json={"user_id": 101, "knowledge_base_id": 201},
+        )
+        session_id = create_resp.json()["data"]["id"]
+        mock_prepare.return_value = RetrievalBundle(
+            question="无关",
+            knowledge_base_id=201,
+            messages=None,
+            references=[],
+            no_hit_answer=NO_HIT_ANSWER,
+            context=None,
+        )
+
+        db = self.SessionLocal()
+        gate = SessionStreamGate()
+        gen = iter_session_ask_events(
+            db,
+            session_id=session_id,
+            user_id=101,
+            question="无关",
+            persist_gate=gate,
+        )
+        next(gen)  # references
+        next(gen)  # token
+        gate.abort()
+        gen.close()
+
+        messages = db.query(ChatMessage).filter(ChatMessage.session_id == session_id).all()
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0].role, "user")
+        db.close()
+
+    @patch("app.services.rag_service.prepare_retrieval")
+    @patch("app.services.rag_service.get_llm_service")
+    def test_stream_llm_error_no_assistant(self, mock_get_llm, mock_prepare):
+        """LLM 流式抛错时：只落 user，不落 assistant。"""
+        from app.services.rag_service import RetrievalBundle
+
+        create_resp = self.client.post(
+            "/api/v1/chat/sessions/create",
+            json={"user_id": 101, "knowledge_base_id": 201},
+        )
+        session_id = create_resp.json()["data"]["id"]
+        mock_prepare.return_value = RetrievalBundle(
+            question="失败测试",
+            knowledge_base_id=201,
+            messages=None,
+            references=[],
+            no_hit_answer=None,
+            context="上下文",
+        )
+        llm = MagicMock()
+        llm.chat_stream.side_effect = RuntimeError("LLM down")
+        mock_get_llm.return_value = llm
+
+        db = self.SessionLocal()
+        with self.assertRaises(Exception):
+            list(
+                iter_session_ask_events(
+                    db,
+                    session_id=session_id,
+                    user_id=101,
+                    question="失败测试",
+                    llm_service=llm,
+                )
+            )
+        messages = db.query(ChatMessage).filter(ChatMessage.session_id == session_id).all()
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0].role, "user")
         db.close()
 
 

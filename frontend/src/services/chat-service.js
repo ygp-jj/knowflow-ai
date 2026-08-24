@@ -100,30 +100,38 @@ async function consumeSseResponse(response, handlers = {}) {
     handlers.onError?.(errMessage);
   }
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      const parsed = parseSseBuffer(buffer);
+      buffer = parsed.rest;
+
+      parsed.events.forEach((item) => {
+        if (item.event === 'references') {
+          handlers.onReferences?.(item.data?.references || []);
+        } else if (item.event === 'token') {
+          handlers.onToken?.(item.data?.text || '');
+        } else if (item.event === 'done') {
+          settleDone();
+        } else if (item.event === 'error') {
+          settleError(item.data?.message || '流式问答失败');
+        }
+      });
     }
 
-    buffer += decoder.decode(value, { stream: true });
-    const parsed = parseSseBuffer(buffer);
-    buffer = parsed.rest;
-
-    parsed.events.forEach((item) => {
-      if (item.event === 'references') {
-        handlers.onReferences?.(item.data?.references || []);
-      } else if (item.event === 'token') {
-        handlers.onToken?.(item.data?.text || '');
-      } else if (item.event === 'done') {
-        settleDone();
-      } else if (item.event === 'error') {
-        settleError(item.data?.message || '流式问答失败');
-      }
-    });
+    settleDone();
+  } catch (error) {
+    // 用户点击停止时 fetch/reader 会抛 AbortError，不应触发 onDone
+    if (error?.name === 'AbortError') {
+      return;
+    }
+    throw error;
   }
-
-  settleDone();
 }
 
 /**

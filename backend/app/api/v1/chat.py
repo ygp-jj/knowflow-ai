@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -37,6 +37,7 @@ from app.services.llm_service import LLMServiceError
 from app.services.milvus_service import MilvusServiceError
 from app.services.rag_service import (
     RagServiceError,
+    SessionStreamGate,
     ask_knowledge_base,
     iter_ask_knowledge_base_events,
     iter_session_ask_events,
@@ -220,21 +221,44 @@ def messages_list(
 
 
 @router.post("/sessions/ask-stream")
-def sessions_ask_stream(payload: ChatSessionAskStreamRequest, db: Session = Depends(get_db)):
+async def sessions_ask_stream(
+    request: Request,
+    payload: ChatSessionAskStreamRequest,
+    db: Session = Depends(get_db),
+):
     """会话内流式提问（产品主路径）。
 
     注意：前端 Abort 停止生成时，已落库的 user 保留，assistant 不会写入。
     """
+    persist_gate = SessionStreamGate()
 
-    def event_generator() -> Iterator[str]:
+    async def event_generator():
+        gen = iter_session_ask_events(
+            db,
+            session_id=payload.session_id,
+            user_id=payload.user_id,
+            question=payload.question,
+            persist_gate=persist_gate,
+        )
         try:
-            for item in iter_session_ask_events(
-                db,
-                session_id=payload.session_id,
-                user_id=payload.user_id,
-                question=payload.question,
-            ):
+            while True:
+                if await request.is_disconnected():
+                    persist_gate.abort()
+                    gen.close()
+                    break
+                try:
+                    item = next(gen)
+                except StopIteration:
+                    break
                 yield _format_sse(item)
+                if await request.is_disconnected():
+                    persist_gate.abort()
+                    gen.close()
+                    break
+        except GeneratorExit:
+            persist_gate.abort()
+            gen.close()
+            raise
         except RagServiceError as exc:
             yield _format_sse({"event": "error", "message": str(exc), "code": exc.http_code})
         except ChatSessionServiceError as exc:

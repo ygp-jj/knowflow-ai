@@ -45,6 +45,22 @@ class RagServiceError(RuntimeError):
 
 
 @dataclass
+class SessionStreamGate:
+    """会话流式落库闸门：客户端停止/断开后禁止写入 assistant。"""
+
+    allow_persist: bool = True
+
+    def abort(self) -> None:
+        """标记客户端已中断，后续不再落 assistant。"""
+        self.allow_persist = False
+
+
+def _allow_persist_assistant(persist_gate: SessionStreamGate | None) -> bool:
+    """是否允许写入 assistant（未传 gate 时保持单测/直连调用行为）。"""
+    return persist_gate is None or persist_gate.allow_persist
+
+
+@dataclass
 class RetrievalBundle:
     """检索准备结果：供非流式 / 流式共用。"""
 
@@ -272,6 +288,7 @@ def iter_session_ask_events(
     embedding_service: EmbeddingService | None = None,
     milvus_service: MilvusService | None = None,
     llm_service: LLMService | None = None,
+    persist_gate: SessionStreamGate | None = None,
 ) -> Iterator[dict]:
     """会话内流式问答：先落 user → 检索 → SSE → 成功再落 assistant。
 
@@ -317,7 +334,9 @@ def iter_session_ask_events(
         answer_text = bundle.no_hit_answer
         yield {"event": "references", "references": []}
         yield {"event": "token", "text": answer_text}
-        # 无命中也落 assistant（友好提示）
+        if not _allow_persist_assistant(persist_gate):
+            return
+        # 无命中也落 assistant（友好提示）；客户端已停止时不落库
         assistant = session_svc.add_message(
             db,
             session_id=session.id,
@@ -344,10 +363,17 @@ def iter_session_ask_events(
     except GeneratorExit:
         # 客户端断开 / 停止生成：不落 assistant
         raise
+    except Exception as exc:
+        # LLM 流式失败：不落 assistant
+        logger.exception("会话流式 LLM 失败: session_id=%s", session_id)
+        raise RagServiceError(f"LLM 流式失败: {exc}", http_code=502) from exc
 
     answer_text = "".join(parts).strip()
     if not answer_text:
         raise RagServiceError("LLM 返回空文本", http_code=502)
+
+    if not _allow_persist_assistant(persist_gate):
+        return
 
     assistant = session_svc.add_message(
         db,

@@ -102,18 +102,33 @@
               />
               <div v-else class="message-bubble__content">{{ msg.content }}</div>
               <span v-if="msg.streaming" class="answer-cursor">▍</span>
-              <!-- 助手消息的引用切片 -->
-              <div v-if="msg.role === 'assistant' && msg.references?.length" class="message-refs">
-                <div class="message-refs__label">引用</div>
-                <div v-for="refItem in msg.references" :key="refItem.chunk_id || refItem.id" class="ref-item">
-                  <div class="ref-item__meta">
-                    <ATag>chunk #{{ refItem.chunk_id }}</ATag>
-                    <ATag>文档 {{ refItem.document_id }}</ATag>
-                    <ATag v-if="refItem.score != null" color="blue">
-                      score {{ Number(refItem.score).toFixed(3) }}
-                    </ATag>
+              <!--
+                引用区：仅在本轮 done 后展示（streaming=false）。
+                默认收起，点击「引用 (N)」展开完整正文。
+              -->
+              <div
+                v-if="msg.role === 'assistant' && !msg.streaming && msg.references?.length"
+                class="message-refs"
+              >
+                <button type="button" class="message-refs__toggle" @click="toggleMessageRefs(msg)">
+                  引用 ({{ msg.references.length }})
+                  <span class="message-refs__toggle-hint">{{ msg.refsExpanded ? '收起' : '展开' }}</span>
+                </button>
+                <div v-show="msg.refsExpanded" class="message-refs__body">
+                  <div
+                    v-for="refItem in msg.references"
+                    :key="refItem.chunk_id || refItem.id"
+                    class="ref-item"
+                  >
+                    <div class="ref-item__meta">
+                      <ATag>chunk #{{ refItem.chunk_id }}</ATag>
+                      <ATag>文档 {{ refItem.document_id }}</ATag>
+                      <ATag v-if="refItem.score != null" color="blue">
+                        score {{ Number(refItem.score).toFixed(3) }}
+                      </ATag>
+                    </div>
+                    <pre class="ref-item__content">{{ refItem.content || refItem.content_preview }}</pre>
                   </div>
-                  <pre class="ref-item__content">{{ refItem.content || refItem.content_preview }}</pre>
                 </div>
               </div>
             </div>
@@ -157,6 +172,7 @@
  * 2. 提问只调 askSessionStream；停止 = AbortController.abort()，后端不落半截 assistant
  * 3. 停止后本地去掉 streaming 助手气泡；刷新 messages/list 应只见已落库的 user
  * 4. 双击或点「改名」可改 title；首问后端会把「新会话」自动改成问题截断
+ * 5. 引用默认收起；仅流式 done 后显示「引用 (N)」，展开见完整正文
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { message, Modal } from 'ant-design-vue';
@@ -322,16 +338,7 @@ async function loadMessages(sessionId) {
       page: 1,
       pageSize: 200,
     });
-    displayMessages.value = (data.items || []).map((msg) => ({
-      ...msg,
-      // 历史接口里引用字段是 content_preview；统一给模板用
-      references: (msg.references || []).map((ref) => ({
-        ...ref,
-        content: ref.content_preview || ref.content,
-        chunk_id: ref.chunk_id,
-      })),
-      streaming: false,
-    }));
+    displayMessages.value = (data.items || []).map((msg) => mapMessageForDisplay(msg));
     await scrollToBottom();
   } catch (error) {
     message.error(normalizeErrorMessage(error));
@@ -395,6 +402,36 @@ function handleDeleteSession(item) {
       }
     },
   });
+}
+
+/**
+ * 统一消息展示结构（历史 / 本地气泡共用）。
+ * @param {any} msg 原始消息。
+ * @param {{ streaming?: boolean, localKey?: string }} [extra] 额外字段。
+ * @returns {any}
+ */
+function mapMessageForDisplay(msg, extra = {}) {
+  return {
+    ...msg,
+    ...extra,
+    references: (msg.references || []).map((ref) => ({
+      ...ref,
+      content: ref.content_preview || ref.content,
+      chunk_id: ref.chunk_id,
+    })),
+    /** 引用折叠：默认收起。 */
+    refsExpanded: false,
+    streaming: extra.streaming ?? false,
+  };
+}
+
+/**
+ * 切换某条助手消息的引用展开/收起。
+ * @param {any} msg 消息对象。
+ * @returns {void}
+ */
+function toggleMessageRefs(msg) {
+  msg.refsExpanded = !msg.refsExpanded;
 }
 
 /**
@@ -473,22 +510,19 @@ async function handleAsk() {
   question.value = '';
 
   // 本地先插入用户气泡（与后端落库一致；刷新后仍在）
-  displayMessages.value.push({
-    localKey: `u-${Date.now()}`,
-    role: 'user',
-    content: text,
-    references: [],
-    streaming: false,
-  });
+  displayMessages.value.push(
+    mapMessageForDisplay(
+      { role: 'user', content: text, references: [] },
+      { localKey: `u-${Date.now()}` },
+    ),
+  );
 
-  // 本地临时助手气泡（流式追加；停止时会删掉）
-  displayMessages.value.push({
-    localKey: `a-${Date.now()}`,
-    role: 'assistant',
-    content: '',
-    references: [],
-    streaming: true,
-  });
+  displayMessages.value.push(
+    mapMessageForDisplay(
+      { role: 'assistant', content: '', references: [] },
+      { localKey: `a-${Date.now()}`, streaming: true },
+    ),
+  );
   streamingAssistantIndex = displayMessages.value.length - 1;
   asking.value = true;
   await scrollToBottom();
@@ -764,10 +798,31 @@ async function scrollToBottom() {
   margin-top: 10px;
 }
 
-.message-refs__label {
+.message-refs__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.message-refs__toggle:hover {
+  border-color: #2563eb;
+  color: #2563eb;
+}
+
+.message-refs__toggle-hint {
   font-size: 12px;
   color: #64748b;
-  margin-bottom: 6px;
+}
+
+.message-refs__body {
+  margin-top: 8px;
 }
 
 .ref-item {

@@ -113,14 +113,18 @@ function handleClick() {
 
 - **无会话单次问答（非流式兜底）**：`POST /api/v1/chat/ask`，请求体 `{ "knowledge_base_id": 1, "question": "..." }`。
 - **无会话流式问答（5A）**：`POST /api/v1/chat/ask-stream`，SSE 事件：`references` → `token*` → `done` / `error`。
+- **多轮会话（5B）**：
+  - 会话：`POST/GET/PUT/DELETE` → `/api/v1/chat/sessions/create|list|detail|update|delete`（`user_id` 前端传入；创建绑定 `knowledge_base_id`，会话内不可换库）。
+  - 消息：`GET /api/v1/chat/messages/list?session_id=&user_id=`（assistant 带 references）。
+  - 提问（唯一）：`POST /api/v1/chat/sessions/ask-stream`，body `{ "session_id", "user_id", "question" }`；**不做** `sessions/ask`。
+  - 落库：先写 user；成功再写 assistant+引用；失败/停止不落 assistant。无命中时 user+友好提示 assistant 都落。
+  - 标题：默认「新会话」；仅默认值可被首问自动截断覆盖；支持 `sessions/update` 手动改名。
+  - 历史：最近 `CHAT_HISTORY_MAX_MESSAGES`（默认 10）条，再受 `CHAT_HISTORY_MAX_CHARS`（默认 4000）截断；检索上下文仍用 `RAG_MAX_CONTEXT_CHARS`。
 - 流程：问题 Embedding → Milvus Top-K（按知识库过滤）→ 父子块扩展 → 拼上下文 → DeepSeek 生成。
 - 非流式统一响应 `{ "code": 0, "message": "success", "data": { "answer", "question", "knowledge_base_id", "references" } }`。
 - 无命中时友好提示；流式同样先推空 references 再推提示文本。
-- 本阶段不做多轮会话落库（5B）；保留 `/chat/ask` 作调试与兼容。
-- 参数：`RAG_TOP_K` / `RAG_SCORE_THRESHOLD` / `RAG_MAX_CONTEXT_CHARS`（COSINE 下 score 越大越相似，过滤 `>= threshold`）。
-- 设计说明：
-  - `backend/docs/2026-08-14-rag-chat-mvp-design.md`
-  - `backend/docs/2026-08-21-chat-stream-session-design.md`
+- 参数：`RAG_TOP_K` / `RAG_SCORE_THRESHOLD` / `RAG_MAX_CONTEXT_CHARS` / `CHAT_HISTORY_MAX_CHARS` / `CHAT_HISTORY_MAX_MESSAGES`。
+- 设计说明：`backend/docs/2026-08-21-chat-stream-session-design.md`
 
 ## 后端文档解析与切片约定（第 3 阶段 / 方案 A）
 

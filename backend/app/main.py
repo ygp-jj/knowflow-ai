@@ -2,6 +2,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.models.user import User as _User  # Register the users table for ORM foreign keys.
+from app.models.chat import (  # noqa: F401 — 注册 chat_* 表，供 FK / create_all 使用
+    ChatMessage as _ChatMessage,
+    ChatReference as _ChatReference,
+    ChatSession as _ChatSession,
+)
 # 导入各个业务模块的路由
 from app.api.v1 import documents, chat, knowledge_bases, prompts, models, evaluations
 

@@ -1,50 +1,40 @@
 /**
- * 功能：封装智能问答相关接口。
- * - askQuestion：一次性拿完整答案（调试/兜底）
- * - askQuestionStream：SSE 流式拿答案（页面默认使用，打字机效果）
+ * 功能：智能问答相关接口（无会话调试 + 5B 多轮会话）。
+ *
+ * 交接说明：
+ * - 产品页默认走「会话」：createSession / listSessions / askSessionStream
+ * - askQuestion / askQuestionStream 仍保留，给脚本或联调无会话场景用
+ * - SSE 解析逻辑共用 parseSseBuffer，事件名：references / token / done / error
  */
 import httpClient from './http';
 import { resolveApiBaseUrl, unwrapApiResponse } from '@/utils/api';
 
 /**
- * 对知识库发起单次问答（非流式，等全部生成完再返回）。
+ * 对知识库发起单次问答（无会话、非流式）。
  * @param {{ knowledgeBaseId: number, question: string }} payload 请求参数。
  * @returns {Promise<{ answer: string, question: string, knowledge_base_id: number, references: any[] }>}
  */
 export async function askQuestion(payload) {
-  /** 问答响应对象。 */
   const response = await httpClient.post('/chat/ask', {
     knowledge_base_id: payload.knowledgeBaseId,
     question: payload.question,
   });
-
   return unwrapApiResponse(response.data);
 }
 
 /**
  * 解析浏览器读到的 SSE 文本缓冲，拆成一条条事件。
- * SSE 格式大致是：
- *   event: token
- *   data: {"text":"你"}
- *   （空行表示一条事件结束）
- *
  * @param {string} buffer 尚未处理完的文本缓冲。
  * @returns {{ events: Array<{ event: string, data: any }>, rest: string }}
- *          events=已解析出的事件；rest=不完整、留给下次拼接的尾巴。
  */
 function parseSseBuffer(buffer) {
-  /** 已完整解析的事件列表。 */
   const events = [];
-  /** 按「空行」切分事件块；最后一块可能还不完整。 */
   const parts = buffer.split('\n\n');
-  /** 最后一块先留着，可能还没收齐。 */
   const rest = parts.pop() || '';
 
   parts.forEach((block) => {
     const lines = block.split('\n');
-    /** 事件名，默认 message。 */
     let eventName = 'message';
-    /** data 行拼起来的 JSON 文本。 */
     const dataLines = [];
 
     lines.forEach((line) => {
@@ -59,19 +49,11 @@ function parseSseBuffer(buffer) {
       return;
     }
 
-    /** 后端约定 data 是一段 JSON。 */
     const raw = dataLines.join('\n');
     try {
-      events.push({
-        event: eventName,
-        data: JSON.parse(raw),
-      });
+      events.push({ event: eventName, data: JSON.parse(raw) });
     } catch (error) {
-      // 解析失败时把原始字符串塞进去，方便排查，页面侧再兜底
-      events.push({
-        event: eventName,
-        data: { message: raw },
-      });
+      events.push({ event: eventName, data: { message: raw } });
     }
   });
 
@@ -79,63 +61,29 @@ function parseSseBuffer(buffer) {
 }
 
 /**
- * 对知识库发起流式问答（SSE）。
- * 后端会陆续推：
- *   1) references —— 引用切片列表（可先展示）
- *   2) token —— 答案增量文字（拼起来就是完整答案）
- *   3) done —— 正常结束
- *   或 error —— 失败
- *
- * @param {{ knowledgeBaseId: number, question: string }} payload 请求参数。
+ * 消费 SSE 响应体，按事件回调。
+ * @param {Response} response fetch 响应。
  * @param {{
  *   onReferences?: (refs: any[]) => void,
  *   onToken?: (text: string) => void,
  *   onDone?: () => void,
  *   onError?: (message: string) => void,
- *   signal?: AbortSignal,
- * }} handlers 回调；页面用它们更新界面。
+ * }} handlers 回调。
  * @returns {Promise<void>}
  */
-export async function askQuestionStream(payload, handlers = {}) {
-  /** API 根路径，例如 /api/v1。 */
-  const baseUrl = resolveApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
-  /** 完整流式地址。 */
-  const url = `${baseUrl}/chat/ask-stream`;
-
-  /** 发起 POST；流式不能用 axios 方便消费，所以用原生 fetch。 */
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'text/event-stream',
-    },
-    body: JSON.stringify({
-      knowledge_base_id: payload.knowledgeBaseId,
-      question: payload.question,
-    }),
-    signal: handlers.signal,
-  });
-
+async function consumeSseResponse(response, handlers = {}) {
   if (!response.ok) {
-    throw new Error(`流式问答请求失败（HTTP ${response.status}）`);
+    throw new Error(`流式请求失败（HTTP ${response.status}）`);
   }
   if (!response.body) {
     throw new Error('浏览器未返回可读数据流');
   }
 
-  /** 按块读取响应体。 */
   const reader = response.body.getReader();
-  /** 把二进制块解码成文字。 */
   const decoder = new TextDecoder('utf-8');
-  /** 拼不完整的 SSE 片段。 */
   let buffer = '';
-  /** 是否已经结束（done 或 error），避免重复回调。 */
   let settled = false;
 
-  /**
-   * 安全触发结束回调（只触发一次）。
-   * @returns {void}
-   */
   function settleDone() {
     if (settled) {
       return;
@@ -144,11 +92,6 @@ export async function askQuestionStream(payload, handlers = {}) {
     handlers.onDone?.();
   }
 
-  /**
-   * 安全触发错误回调（只触发一次）。
-   * @param {string} errMessage 错误文案。
-   * @returns {void}
-   */
   function settleError(errMessage) {
     if (settled) {
       return;
@@ -180,6 +123,142 @@ export async function askQuestionStream(payload, handlers = {}) {
     });
   }
 
-  // 流读完但服务端没发 done / error 时，视为正常结束
   settleDone();
+}
+
+/**
+ * 无会话流式问答（5A）。
+ * @param {{ knowledgeBaseId: number, question: string }} payload 请求参数。
+ * @param {object} handlers 回调（含可选 signal）。
+ * @returns {Promise<void>}
+ */
+export async function askQuestionStream(payload, handlers = {}) {
+  const baseUrl = resolveApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
+  const response = await fetch(`${baseUrl}/chat/ask-stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+    },
+    body: JSON.stringify({
+      knowledge_base_id: payload.knowledgeBaseId,
+      question: payload.question,
+    }),
+    signal: handlers.signal,
+  });
+  await consumeSseResponse(response, handlers);
+}
+
+/**
+ * 创建会话（绑定知识库；缺省标题「新会话」）。
+ * @param {{ userId: number, knowledgeBaseId: number, title?: string }} payload 参数。
+ * @returns {Promise<any>}
+ */
+export async function createSession(payload) {
+  const body = {
+    user_id: payload.userId,
+    knowledge_base_id: payload.knowledgeBaseId,
+  };
+  if (payload.title) {
+    body.title = payload.title;
+  }
+  const response = await httpClient.post('/chat/sessions/create', body);
+  return unwrapApiResponse(response.data);
+}
+
+/**
+ * 分页列出会话。
+ * @param {{ userId: number, page?: number, pageSize?: number }} filters 条件。
+ * @returns {Promise<{ items: any[], total: number, page: number, page_size: number }>}
+ */
+export async function fetchSessionList(filters) {
+  const response = await httpClient.get('/chat/sessions/list', {
+    params: {
+      user_id: filters.userId,
+      page: filters.page || 1,
+      page_size: filters.pageSize || 50,
+    },
+  });
+  return unwrapApiResponse(response.data);
+}
+
+/**
+ * 会话详情。
+ * @param {number} id 会话 ID。
+ * @param {number} userId 用户 ID。
+ * @returns {Promise<any>}
+ */
+export async function fetchSessionDetail(id, userId) {
+  const response = await httpClient.get('/chat/sessions/detail', {
+    params: { id, user_id: userId },
+  });
+  return unwrapApiResponse(response.data);
+}
+
+/**
+ * 手动改会话标题。
+ * @param {{ id: number, userId: number, title: string }} payload 参数。
+ * @returns {Promise<any>}
+ */
+export async function updateSessionTitle(payload) {
+  const response = await httpClient.put('/chat/sessions/update', {
+    id: payload.id,
+    user_id: payload.userId,
+    title: payload.title,
+  });
+  return unwrapApiResponse(response.data);
+}
+
+/**
+ * 删除会话（级联消息与引用）。
+ * @param {number} id 会话 ID。
+ * @param {number} userId 用户 ID。
+ * @returns {Promise<null>}
+ */
+export async function deleteSession(id, userId) {
+  const response = await httpClient.delete('/chat/sessions/delete', {
+    params: { id, user_id: userId },
+  });
+  return unwrapApiResponse(response.data);
+}
+
+/**
+ * 拉取会话消息列表（含 assistant.references）。
+ * @param {{ sessionId: number, userId: number, page?: number, pageSize?: number }} filters 条件。
+ * @returns {Promise<{ items: any[], total: number, page: number, page_size: number }>}
+ */
+export async function fetchMessageList(filters) {
+  const response = await httpClient.get('/chat/messages/list', {
+    params: {
+      session_id: filters.sessionId,
+      user_id: filters.userId,
+      page: filters.page || 1,
+      page_size: filters.pageSize || 100,
+    },
+  });
+  return unwrapApiResponse(response.data);
+}
+
+/**
+ * 会话内流式提问（5B 产品主路径）。
+ * @param {{ sessionId: number, userId: number, question: string }} payload 参数。
+ * @param {object} handlers 回调（onReferences / onToken / onDone / onError / signal）。
+ * @returns {Promise<void>}
+ */
+export async function askSessionStream(payload, handlers = {}) {
+  const baseUrl = resolveApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
+  const response = await fetch(`${baseUrl}/chat/sessions/ask-stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+    },
+    body: JSON.stringify({
+      session_id: payload.sessionId,
+      user_id: payload.userId,
+      question: payload.question,
+    }),
+    signal: handlers.signal,
+  });
+  await consumeSseResponse(response, handlers);
 }

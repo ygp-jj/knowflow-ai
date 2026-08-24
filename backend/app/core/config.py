@@ -42,7 +42,11 @@ class Settings(BaseSettings):
     # ========== RAG 检索参数 ==========
     rag_top_k: int = 5                        # 检索返回的文档块数量
     rag_score_threshold: float = 0.3          # 相似度阈值，低于此分数会被过滤
-    rag_max_context_chars: int = 8000         # 拼接给 LLM 的最大字符数
+    rag_max_context_chars: int = 8000         # 拼接给 LLM 的检索上下文最大字符数
+    # 多轮会话：喂给 LLM 的历史消息字符上限（与检索限额分开，默认 4000）
+    chat_history_max_chars: int = 4000
+    # 多轮会话：最多携带的历史消息条数（含本轮刚写入的 user）
+    chat_history_max_messages: int = 10
 
     # ========== 文本切片参数（精准问答场景默认 256/50） ==========
     chunk_size: int = 256                     # 单块最大字符数（滑动窗口长度）

@@ -65,18 +65,27 @@ function handleClick() {
 
 ## 后端知识库管理接口约定
 
-- 第一版知识库管理的 `owner_id` 由前端显式传入，便于联调测试，并为后续登录态接入预留扩展空间。
-- 知识库管理第一版只实现基础 CRUD：创建、分页列表、详情、修改、删除。
+- 知识库归属以 **JWT 当前用户** 为准，前端不再传 `owner_id`。
+- 知识库管理只实现基础 CRUD：创建、分页列表、详情、修改、删除。
 - 知识库接口不要把业务 `id` 写在 URL 路径段里，详情和删除用查询参数传入 `id`，修改用请求体传入 `id`。
 - 知识库接口路径固定为：
   - `POST /api/v1/knowledge-bases/create`
-  - `GET /api/v1/knowledge-bases/list?owner_id=<owner_id>&page=1&page_size=10`
-  - `GET /api/v1/knowledge-bases/detail?id=1&owner_id=<owner_id>`
+  - `GET /api/v1/knowledge-bases/list?page=1&page_size=10`
+  - `GET /api/v1/knowledge-bases/detail?id=1`
   - `PUT /api/v1/knowledge-bases/update`
-  - `DELETE /api/v1/knowledge-bases/delete?id=1&owner_id=<owner_id>`
+  - `DELETE /api/v1/knowledge-bases/delete?id=1`
 - 知识库接口统一响应格式为 `{ "code": 0, "message": "success", "data": ... }`，错误时 `data` 返回 `null`。
 - 知识库列表必须分页，返回 `items`、`total`、`page`、`page_size`。
 - 删除知识库前必须检查是否存在关联文档；如果存在文档，接口返回错误，不执行删除。
+- 知识库 / 文档 / 聊天业务 API 均需 `Authorization: Bearer <token>`（公开接口仅 `/api/v1/auth/login` 与 `/health`）。
+
+## 后端登录鉴权约定
+
+- `POST /api/v1/auth/login`：`{ username, password }` → `{ access_token, token_type, user }`。
+- `GET /api/v1/auth/me`：需 Bearer，返回当前用户。
+- 演示账号：`hr_admin` / `demo123456`（seed 中 4 用户密码统一，bcrypt）。
+- 配置：`JWT_SECRET_KEY` / `JWT_ALGORITHM` / `JWT_EXPIRE_MINUTES`（默认 7 天）。
+- 设计说明：`backend/docs/2026-08-24-auth-login-design.md`
 
 ## 后端文档管理接口约定
 
@@ -114,9 +123,9 @@ function handleClick() {
 - **无会话单次问答（非流式兜底）**：`POST /api/v1/chat/ask`，请求体 `{ "knowledge_base_id": 1, "question": "..." }`。
 - **无会话流式问答（5A）**：`POST /api/v1/chat/ask-stream`，SSE 事件：`references` → `token*` → `done` / `error`。
 - **多轮会话（5B）**：
-  - 会话：`POST/GET/PUT/DELETE` → `/api/v1/chat/sessions/create|list|detail|update|delete`（`user_id` 前端传入；创建绑定 `knowledge_base_id`，会话内不可换库）。
-  - 消息：`GET /api/v1/chat/messages/list?session_id=&user_id=`（assistant 带 references）。
-  - 提问（唯一）：`POST /api/v1/chat/sessions/ask-stream`，body `{ "session_id", "user_id", "question" }`；**不做** `sessions/ask`。
+  - 会话：`POST/GET/PUT/DELETE` → `/api/v1/chat/sessions/create|list|detail|update|delete`（`user_id` 由 JWT 注入；创建绑定 `knowledge_base_id`，会话内不可换库）。
+  - 消息：`GET /api/v1/chat/messages/list?session_id=`（assistant 带 references）。
+  - 提问（唯一）：`POST /api/v1/chat/sessions/ask-stream`，body `{ "session_id", "question" }`；**不做** `sessions/ask`。
   - 落库：先写 user；成功再写 assistant+引用；失败/停止不落 assistant。无命中时 user+友好提示 assistant 都落。
   - 标题：默认「新会话」；仅默认值可被首问自动截断覆盖；支持 `sessions/update` 手动改名。
   - 历史：最近 `CHAT_HISTORY_MAX_MESSAGES`（默认 10）条，再受 `CHAT_HISTORY_MAX_CHARS`（默认 4000）截断；检索上下文仍用 `RAG_MAX_CONTEXT_CHARS`。

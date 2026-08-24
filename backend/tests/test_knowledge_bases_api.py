@@ -12,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.database import Base, get_db
 from app.main import app
 from app.models.user import User
+from tests.auth_test_utils import auth_header_for_user, hashed_demo_password
 
 
 class KnowledgeBaseApiTests(unittest.TestCase):
@@ -29,8 +30,18 @@ class KnowledgeBaseApiTests(unittest.TestCase):
         db = self.SessionLocal()
         db.add_all(
             [
-                User(id=101, username="owner101", email="owner101@example.com", hashed_password="test"),
-                User(id=202, username="owner202", email="owner202@example.com", hashed_password="test"),
+                User(
+                    id=101,
+                    username="owner101",
+                    email="owner101@example.com",
+                    hashed_password=hashed_demo_password(),
+                ),
+                User(
+                    id=202,
+                    username="owner202",
+                    email="owner202@example.com",
+                    hashed_password=hashed_demo_password(),
+                ),
             ]
         )
         db.commit()
@@ -45,6 +56,8 @@ class KnowledgeBaseApiTests(unittest.TestCase):
 
         app.dependency_overrides[get_db] = override_get_db
         self.client = TestClient(app)
+        self.headers_101 = auth_header_for_user(101, username="owner101")
+        self.headers_202 = auth_header_for_user(202, username="owner202")
 
     def tearDown(self):
         """清理依赖覆盖和测试数据库表。"""
@@ -52,19 +65,21 @@ class KnowledgeBaseApiTests(unittest.TestCase):
         app.dependency_overrides.clear()
         Base.metadata.drop_all(bind=self.engine)
 
-    def test_crud_uses_explicit_owner_id_and_unified_response(self):
-        """验证知识库 CRUD 使用前端传入的 owner_id，并保持统一响应结构。"""
+    def test_crud_uses_jwt_owner_and_unified_response(self):
+        """验证知识库 CRUD 以 JWT 用户为 owner，并保持统一响应结构。"""
 
         primary_owner_id = 101
         secondary_owner_id = 202
 
         primary_create_response = self.client.post(
             "/api/v1/knowledge-bases/create",
-            json={"name": "产品知识库", "description": "产品文档集合", "owner_id": primary_owner_id},
+            json={"name": "产品知识库", "description": "产品文档集合"},
+            headers=self.headers_101,
         )
         secondary_create_response = self.client.post(
             "/api/v1/knowledge-bases/create",
-            json={"name": "运营知识库", "description": "运营文档集合", "owner_id": secondary_owner_id},
+            json={"name": "运营知识库", "description": "运营文档集合"},
+            headers=self.headers_202,
         )
 
         self.assertEqual(primary_create_response.status_code, 200)
@@ -78,10 +93,12 @@ class KnowledgeBaseApiTests(unittest.TestCase):
         knowledge_base_id = primary_create_body["data"]["id"]
 
         primary_list_response = self.client.get(
-            f"/api/v1/knowledge-bases/list?owner_id={primary_owner_id}&page=1&page_size=10"
+            "/api/v1/knowledge-bases/list?page=1&page_size=10",
+            headers=self.headers_101,
         )
         secondary_list_response = self.client.get(
-            f"/api/v1/knowledge-bases/list?owner_id={secondary_owner_id}&page=1&page_size=10"
+            "/api/v1/knowledge-bases/list?page=1&page_size=10",
+            headers=self.headers_202,
         )
 
         primary_list_body = primary_list_response.json()
@@ -96,7 +113,8 @@ class KnowledgeBaseApiTests(unittest.TestCase):
         self.assertEqual(secondary_list_body["data"]["items"][0]["owner_id"], secondary_owner_id)
 
         detail_response = self.client.get(
-            f"/api/v1/knowledge-bases/detail?id={knowledge_base_id}&owner_id={primary_owner_id}"
+            f"/api/v1/knowledge-bases/detail?id={knowledge_base_id}",
+            headers=self.headers_101,
         )
         self.assertEqual(detail_response.json()["data"]["description"], "产品文档集合")
 
@@ -106,26 +124,28 @@ class KnowledgeBaseApiTests(unittest.TestCase):
                 "id": knowledge_base_id,
                 "name": "更新后的知识库",
                 "description": "更新后的说明",
-                "owner_id": primary_owner_id,
             },
+            headers=self.headers_101,
         )
         update_body = update_response.json()
         self.assertEqual(update_body["code"], 0)
         self.assertEqual(update_body["data"]["name"], "更新后的知识库")
 
         delete_response = self.client.delete(
-            f"/api/v1/knowledge-bases/delete?id={knowledge_base_id}&owner_id={primary_owner_id}"
+            f"/api/v1/knowledge-bases/delete?id={knowledge_base_id}",
+            headers=self.headers_101,
         )
         self.assertEqual(delete_response.json(), {"code": 0, "message": "success", "data": None})
 
         missing_response = self.client.get(
-            f"/api/v1/knowledge-bases/detail?id={knowledge_base_id}&owner_id={primary_owner_id}"
+            f"/api/v1/knowledge-bases/detail?id={knowledge_base_id}",
+            headers=self.headers_101,
         )
         self.assertEqual(missing_response.status_code, 200)
         self.assertEqual(missing_response.json(), {"code": 404, "message": "知识库不存在", "data": None})
 
     def test_delete_rejects_knowledge_base_that_has_documents(self):
-        """验证知识库存在关联文档时拒绝删除，并要求显式传入 owner_id。"""
+        """验证知识库存在关联文档时拒绝删除。"""
 
         from app.models.document import Document
         from app.models.knowledge_base import KnowledgeBase
@@ -152,7 +172,8 @@ class KnowledgeBaseApiTests(unittest.TestCase):
         db.close()
 
         response = self.client.delete(
-            f"/api/v1/knowledge-bases/delete?id={knowledge_base_id}&owner_id={owner_id}"
+            f"/api/v1/knowledge-bases/delete?id={knowledge_base_id}",
+            headers=self.headers_101,
         )
 
         self.assertEqual(response.status_code, 200)

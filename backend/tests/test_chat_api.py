@@ -13,6 +13,7 @@ from app.main import app
 from app.models.knowledge_base import KnowledgeBase
 from app.models.user import User
 from app.schemas.chat import ChatAskRead
+from tests.auth_test_utils import auth_header_for_user
 
 
 class ChatApiTests(unittest.TestCase):
@@ -40,6 +41,7 @@ class ChatApiTests(unittest.TestCase):
 
         app.dependency_overrides[get_db] = override_get_db
         self.client = TestClient(app)
+        self.auth_headers = auth_header_for_user(1, username="u")
 
     def tearDown(self):
         app.dependency_overrides.clear()
@@ -49,6 +51,7 @@ class ChatApiTests(unittest.TestCase):
         response = self.client.post(
             "/api/v1/chat/ask",
             json={"knowledge_base_id": 1, "question": ""},
+            headers=self.auth_headers,
         )
         self.assertEqual(response.status_code, 422)
 
@@ -63,6 +66,7 @@ class ChatApiTests(unittest.TestCase):
         response = self.client.post(
             "/api/v1/chat/ask",
             json={"knowledge_base_id": 1, "question": "问题"},
+            headers=self.auth_headers,
         )
         self.assertEqual(response.status_code, 200)
         body = response.json()
@@ -77,6 +81,7 @@ class ChatApiTests(unittest.TestCase):
         response = self.client.post(
             "/api/v1/chat/ask",
             json={"knowledge_base_id": 9, "question": "问题"},
+            headers=self.auth_headers,
         )
         self.assertEqual(response.status_code, 200)
         body = response.json()
@@ -95,6 +100,7 @@ class ChatApiTests(unittest.TestCase):
         response = self.client.post(
             "/api/v1/chat/ask-stream",
             json={"knowledge_base_id": 1, "question": "问题"},
+            headers=self.auth_headers,
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn("text/event-stream", response.headers.get("content-type", ""))

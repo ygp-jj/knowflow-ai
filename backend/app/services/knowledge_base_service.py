@@ -1,7 +1,7 @@
 """知识库管理业务服务。
 
 本模块封装知识库 CRUD 规则，路由层只负责调用这些函数。
-owner_id 由前端传入，不在服务层硬编码。
+owner_id 由 JWT 当前用户注入，不由前端传入。
 """
 
 from sqlalchemy.orm import Session
@@ -11,12 +11,18 @@ from app.models.knowledge_base import KnowledgeBase
 from app.schemas.knowledge_base import KnowledgeBaseCreate, KnowledgeBaseUpdate
 
 
-def create_knowledge_base(db: Session, payload: KnowledgeBaseCreate) -> KnowledgeBase:
+def create_knowledge_base(
+    db: Session,
+    payload: KnowledgeBaseCreate,
+    *,
+    owner_id: int,
+) -> KnowledgeBase:
     """创建知识库。
 
     参数:
         db: 数据库会话。
-        payload: 创建请求数据，包含知识库名称、描述和所属用户 ID。
+        payload: 创建请求数据，包含知识库名称、描述。
+        owner_id: 所属用户 ID（来自 JWT）。
     返回:
         已写入数据库并刷新后的 KnowledgeBase 实例。
     """
@@ -24,7 +30,7 @@ def create_knowledge_base(db: Session, payload: KnowledgeBaseCreate) -> Knowledg
     knowledge_base = KnowledgeBase(
         name=payload.name,
         description=payload.description,
-        owner_id=payload.owner_id,
+        owner_id=owner_id,
     )
     db.add(knowledge_base)
     db.commit()
@@ -73,17 +79,23 @@ def get_knowledge_base(db: Session, knowledge_base_id: int, owner_id: int) -> Kn
     )
 
 
-def update_knowledge_base(db: Session, payload: KnowledgeBaseUpdate) -> KnowledgeBase | None:
+def update_knowledge_base(
+    db: Session,
+    payload: KnowledgeBaseUpdate,
+    *,
+    owner_id: int,
+) -> KnowledgeBase | None:
     """更新知识库。
 
     参数:
         db: 数据库会话。
-        payload: 更新请求数据，包含 id、name、description、owner_id。
+        payload: 更新请求数据，包含 id、name、description。
+        owner_id: 所属用户 ID（来自 JWT）。
     返回:
         更新后的 KnowledgeBase；目标不存在时返回 None。
     """
 
-    knowledge_base = get_knowledge_base(db, payload.id, payload.owner_id)
+    knowledge_base = get_knowledge_base(db, payload.id, owner_id)
     if knowledge_base is None:
         return None
 

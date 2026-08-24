@@ -7,7 +7,17 @@
  * - SSE 解析逻辑共用 parseSseBuffer，事件名：references / token / done / error
  */
 import httpClient from './http';
+import { getToken } from '@/stores/auth';
 import { resolveApiBaseUrl, unwrapApiResponse } from '@/utils/api';
+
+/**
+ * 构造流式 fetch 的 Authorization 头。
+ * @returns {Record<string, string>}
+ */
+function authHeaders() {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 /**
  * 对知识库发起单次问答（无会话、非流式）。
@@ -147,6 +157,7 @@ export async function askQuestionStream(payload, handlers = {}) {
     headers: {
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
+      ...authHeaders(),
     },
     body: JSON.stringify({
       knowledge_base_id: payload.knowledgeBaseId,
@@ -159,12 +170,11 @@ export async function askQuestionStream(payload, handlers = {}) {
 
 /**
  * 创建会话（绑定知识库；缺省标题「新会话」）。
- * @param {{ userId: number, knowledgeBaseId: number, title?: string }} payload 参数。
+ * @param {{ knowledgeBaseId: number, title?: string }} payload 参数。
  * @returns {Promise<any>}
  */
 export async function createSession(payload) {
   const body = {
-    user_id: payload.userId,
     knowledge_base_id: payload.knowledgeBaseId,
   };
   if (payload.title) {
@@ -176,13 +186,12 @@ export async function createSession(payload) {
 
 /**
  * 分页列出会话。
- * @param {{ userId: number, page?: number, pageSize?: number }} filters 条件。
+ * @param {{ page?: number, pageSize?: number }} filters 条件。
  * @returns {Promise<{ items: any[], total: number, page: number, page_size: number }>}
  */
-export async function fetchSessionList(filters) {
+export async function fetchSessionList(filters = {}) {
   const response = await httpClient.get('/chat/sessions/list', {
     params: {
-      user_id: filters.userId,
       page: filters.page || 1,
       page_size: filters.pageSize || 50,
     },
@@ -193,25 +202,23 @@ export async function fetchSessionList(filters) {
 /**
  * 会话详情。
  * @param {number} id 会话 ID。
- * @param {number} userId 用户 ID。
  * @returns {Promise<any>}
  */
-export async function fetchSessionDetail(id, userId) {
+export async function fetchSessionDetail(id) {
   const response = await httpClient.get('/chat/sessions/detail', {
-    params: { id, user_id: userId },
+    params: { id },
   });
   return unwrapApiResponse(response.data);
 }
 
 /**
  * 手动改会话标题。
- * @param {{ id: number, userId: number, title: string }} payload 参数。
+ * @param {{ id: number, title: string }} payload 参数。
  * @returns {Promise<any>}
  */
 export async function updateSessionTitle(payload) {
   const response = await httpClient.put('/chat/sessions/update', {
     id: payload.id,
-    user_id: payload.userId,
     title: payload.title,
   });
   return unwrapApiResponse(response.data);
@@ -220,26 +227,24 @@ export async function updateSessionTitle(payload) {
 /**
  * 删除会话（级联消息与引用）。
  * @param {number} id 会话 ID。
- * @param {number} userId 用户 ID。
  * @returns {Promise<null>}
  */
-export async function deleteSession(id, userId) {
+export async function deleteSession(id) {
   const response = await httpClient.delete('/chat/sessions/delete', {
-    params: { id, user_id: userId },
+    params: { id },
   });
   return unwrapApiResponse(response.data);
 }
 
 /**
  * 拉取会话消息列表（含 assistant.references）。
- * @param {{ sessionId: number, userId: number, page?: number, pageSize?: number }} filters 条件。
+ * @param {{ sessionId: number, page?: number, pageSize?: number }} filters 条件。
  * @returns {Promise<{ items: any[], total: number, page: number, page_size: number }>}
  */
 export async function fetchMessageList(filters) {
   const response = await httpClient.get('/chat/messages/list', {
     params: {
       session_id: filters.sessionId,
-      user_id: filters.userId,
       page: filters.page || 1,
       page_size: filters.pageSize || 100,
     },
@@ -249,7 +254,7 @@ export async function fetchMessageList(filters) {
 
 /**
  * 会话内流式提问（5B 产品主路径）。
- * @param {{ sessionId: number, userId: number, question: string }} payload 参数。
+ * @param {{ sessionId: number, question: string }} payload 参数。
  * @param {object} handlers 回调（onReferences / onToken / onDone / onError / signal）。
  * @returns {Promise<void>}
  */
@@ -260,10 +265,10 @@ export async function askSessionStream(payload, handlers = {}) {
     headers: {
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
+      ...authHeaders(),
     },
     body: JSON.stringify({
       session_id: payload.sessionId,
-      user_id: payload.userId,
       question: payload.question,
     }),
     signal: handlers.signal,

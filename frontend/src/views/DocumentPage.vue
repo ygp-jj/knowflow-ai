@@ -166,7 +166,6 @@ import DocumentDetailDrawer from '@/components/DocumentDetailDrawer.vue';
 import DocumentRenameModal from '@/components/DocumentRenameModal.vue';
 import DocumentStatusTag from '@/components/DocumentStatusTag.vue';
 import DocumentUploadModal from '@/components/DocumentUploadModal.vue';
-import { DEFAULT_OWNER_ID } from '@/constants/app';
 import {
   chunkDocument,
   createDocument,
@@ -274,7 +273,6 @@ async function loadKnowledgeBaseOptions() {
     const result = await fetchKnowledgeBaseList({
       page: 1,
       pageSize: 100,
-      ownerId: DEFAULT_OWNER_ID,
     });
 
     knowledgeBaseOptions.value = result.items || [];

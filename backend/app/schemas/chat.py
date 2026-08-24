@@ -48,7 +48,6 @@ SESSION_TITLE_MAX_LEN = 50
 class ChatSessionCreate(BaseModel):
     """创建会话请求。"""
 
-    user_id: int = Field(..., gt=0, description="用户 ID（联调阶段前端显式传入）")
     knowledge_base_id: int = Field(..., gt=0, description="绑定的知识库 ID，会话内不可改")
     title: Optional[str] = Field(
         default=None,
@@ -61,7 +60,6 @@ class ChatSessionUpdate(BaseModel):
     """更新会话标题（手动改名）。"""
 
     id: int = Field(..., gt=0, description="会话 ID")
-    user_id: int = Field(..., gt=0, description="用户 ID，用于归属校验")
     title: str = Field(..., min_length=1, max_length=255, description="新标题")
 
 
@@ -84,7 +82,6 @@ class ChatSessionAskStreamRequest(BaseModel):
     """会话内流式提问请求。知识库取自会话，不在此重复传。"""
 
     session_id: int = Field(..., gt=0, description="会话 ID")
-    user_id: int = Field(..., gt=0, description="用户 ID")
     question: str = Field(..., min_length=1, max_length=2000, description="本轮问题")
 
 

@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     minio_bucket_name: str = "knowflow-documents"  # 文档上传桶名
     minio_secure: bool = False                # 本地开发默认使用 HTTP
 
+    # ========== JWT 登录鉴权 ==========
+    jwt_secret_key: str = "knowflow-dev-jwt-secret-change-me"  # 生产必须改
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 10080  # 默认 7 天
+
     # ========== pydantic-settings 配置（新版本写法） ==========
     model_config = SettingsConfigDict(
         env_file=".env",          # 从当前目录的 .env 文件加载

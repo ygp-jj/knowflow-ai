@@ -14,6 +14,7 @@ from app.main import app
 from app.models.chunk import DocumentChunk  # noqa: F401
 from app.models.document import Document
 from app.models.user import User
+from tests.auth_test_utils import auth_header_for_user
 
 
 class FakeObjectStorage:
@@ -49,7 +50,7 @@ class DocumentsApiTests(unittest.TestCase):
         owner_id = 101
 
         db = self.SessionLocal()
-        db.add(User(id=owner_id, username="default", email="default@example.com", hashed_password="test"))
+        db.add(User(id=owner_id, username="default", email="default@example.com", hashed_password="x"))
         db.add(KnowledgeBase(id=1, name="默认知识库", description="测试用", owner_id=owner_id))
         db.commit()
         db.close()
@@ -83,6 +84,7 @@ class DocumentsApiTests(unittest.TestCase):
         app.dependency_overrides[get_db] = override_get_db
         app.dependency_overrides[get_object_storage] = override_get_object_storage
         self.client = TestClient(app)
+        self.auth_headers = auth_header_for_user(101, username="default")
 
     def tearDown(self):
         self.milvus_patcher.stop()
@@ -96,6 +98,7 @@ class DocumentsApiTests(unittest.TestCase):
             "/api/v1/documents/create",
             data={"knowledge_base_id": "1"},
             files={"file": ("product.pdf", io.BytesIO(b"pdf-content"), "application/pdf")},
+            headers=self.auth_headers,
         )
 
         self.assertEqual(create_response.status_code, 200)
@@ -109,30 +112,39 @@ class DocumentsApiTests(unittest.TestCase):
         self.mock_enqueue.assert_not_called()
         document_id = create_body["data"]["id"]
 
-        list_response = self.client.get("/api/v1/documents/list?page=1&page_size=10&knowledge_base_id=1")
+        list_response = self.client.get("/api/v1/documents/list?page=1&page_size=10&knowledge_base_id=1",
+            headers=self.auth_headers,
+        )
         self.assertEqual(list_response.status_code, 200)
         list_body = list_response.json()
         self.assertEqual(list_body["code"], 0)
         self.assertEqual(list_body["data"]["total"], 1)
         self.assertEqual(list_body["data"]["items"][0]["id"], document_id)
 
-        detail_response = self.client.get(f"/api/v1/documents/detail?id={document_id}")
+        detail_response = self.client.get(f"/api/v1/documents/detail?id={document_id}",
+            headers=self.auth_headers,
+        )
         self.assertEqual(detail_response.status_code, 200)
         self.assertEqual(detail_response.json()["data"]["file_type"], "pdf")
 
         update_response = self.client.put(
             "/api/v1/documents/update",
             json={"id": document_id, "file_name": "renamed.pdf"},
+            headers=self.auth_headers,
         )
         self.assertEqual(update_response.status_code, 200)
         self.assertEqual(update_response.json()["data"]["file_name"], "renamed.pdf")
 
-        download_response = self.client.get(f"/api/v1/documents/download?id={document_id}")
+        download_response = self.client.get(f"/api/v1/documents/download?id={document_id}",
+            headers=self.auth_headers,
+        )
         self.assertEqual(download_response.status_code, 200)
         self.assertEqual(download_response.content, b"pdf-content")
         self.assertIn("renamed.pdf", download_response.headers["content-disposition"])
 
-        delete_response = self.client.delete(f"/api/v1/documents/delete?id={document_id}")
+        delete_response = self.client.delete(f"/api/v1/documents/delete?id={document_id}",
+            headers=self.auth_headers,
+        )
         self.assertEqual(delete_response.status_code, 200)
         self.assertEqual(delete_response.json(), {"code": 0, "message": "success", "data": None})
         self.assertEqual(self.fake_storage.objects, {})
@@ -142,6 +154,7 @@ class DocumentsApiTests(unittest.TestCase):
             "/api/v1/documents/create",
             data={"knowledge_base_id": "999"},
             files={"file": ("missing.pdf", io.BytesIO(b"missing"), "application/pdf")},
+            headers=self.auth_headers,
         )
 
         self.assertEqual(response.status_code, 200)
@@ -164,6 +177,7 @@ class DocumentsApiTests(unittest.TestCase):
                     excel_mime,
                 )
             },
+            headers=self.auth_headers,
         )
 
         self.assertEqual(response.status_code, 200)
@@ -179,6 +193,7 @@ class DocumentsApiTests(unittest.TestCase):
             "/api/v1/documents/create",
             data={"knowledge_base_id": "1"},
             files={"file": ("manual.txt", io.BytesIO(b"hello"), "text/plain")},
+            headers=self.auth_headers,
         )
         document_id = create_response.json()["data"]["id"]
 
@@ -197,7 +212,9 @@ class DocumentsApiTests(unittest.TestCase):
         db.commit()
         db.close()
 
-        response = self.client.get(f"/api/v1/documents/chunks?document_id={document_id}&page=1&page_size=10")
+        response = self.client.get(f"/api/v1/documents/chunks?document_id={document_id}&page=1&page_size=10",
+            headers=self.auth_headers,
+        )
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertEqual(body["code"], 0)
@@ -209,11 +226,14 @@ class DocumentsApiTests(unittest.TestCase):
             "/api/v1/documents/create",
             data={"knowledge_base_id": "1"},
             files={"file": ("manual.txt", io.BytesIO(b"hello"), "text/plain")},
+            headers=self.auth_headers,
         )
         document_id = create_response.json()["data"]["id"]
         self.mock_enqueue.reset_mock()
 
-        response = self.client.post("/api/v1/documents/chunk", json={"id": document_id})
+        response = self.client.post("/api/v1/documents/chunk", json={"id": document_id},
+            headers=self.auth_headers,
+        )
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertEqual(body["code"], 0)
@@ -226,6 +246,7 @@ class DocumentsApiTests(unittest.TestCase):
             "/api/v1/documents/create",
             data={"knowledge_base_id": "1"},
             files={"file": ("busy.txt", io.BytesIO(b"hello"), "text/plain")},
+            headers=self.auth_headers,
         )
         document_id = create_response.json()["data"]["id"]
 
@@ -235,7 +256,9 @@ class DocumentsApiTests(unittest.TestCase):
         db.commit()
         db.close()
 
-        response = self.client.post("/api/v1/documents/chunk", json={"id": document_id})
+        response = self.client.post("/api/v1/documents/chunk", json={"id": document_id},
+            headers=self.auth_headers,
+        )
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertEqual(body["code"], 400)
@@ -247,6 +270,7 @@ class DocumentsApiTests(unittest.TestCase):
             "/api/v1/documents/create",
             data={"knowledge_base_id": "1"},
             files={"file": ("embed.txt", io.BytesIO(b"hello"), "text/plain")},
+            headers=self.auth_headers,
         )
         document_id = create_response.json()["data"]["id"]
 
@@ -268,7 +292,9 @@ class DocumentsApiTests(unittest.TestCase):
         db.close()
 
         self.mock_embed_enqueue.reset_mock()
-        response = self.client.post("/api/v1/documents/embed", json={"id": document_id})
+        response = self.client.post("/api/v1/documents/embed", json={"id": document_id},
+            headers=self.auth_headers,
+        )
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertEqual(body["code"], 0)
@@ -282,10 +308,13 @@ class DocumentsApiTests(unittest.TestCase):
             "/api/v1/documents/create",
             data={"knowledge_base_id": "1"},
             files={"file": ("nochunk.txt", io.BytesIO(b"hello"), "text/plain")},
+            headers=self.auth_headers,
         )
         document_id = create_response.json()["data"]["id"]
 
-        response = self.client.post("/api/v1/documents/embed", json={"id": document_id})
+        response = self.client.post("/api/v1/documents/embed", json={"id": document_id},
+            headers=self.auth_headers,
+        )
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertEqual(body["code"], 400)

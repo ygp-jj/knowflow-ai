@@ -8,10 +8,7 @@ from app.models.chat import (  # noqa: F401 — 注册 chat_* 表，供 FK / cre
     ChatSession as _ChatSession,
 )
 # 导入各个业务模块的路由
-from app.api.v1 import documents, chat, knowledge_bases, prompts, models, evaluations
-
-
-
+from app.api.v1 import auth, documents, chat, knowledge_bases, prompts, models, evaluations
 
 
 # 创建 FastAPI 应用实例
@@ -30,6 +27,12 @@ app.add_middleware(
 )
 
 # ---------- 注册 v1 版本的路由 ----------
+# 登录鉴权（/login 公开；/me 需 Bearer）
+app.include_router(
+    auth.router,
+    prefix="/api/v1/auth",
+    tags=["Auth"],
+)
 # 知识库管理
 app.include_router(
     knowledge_bases.router,

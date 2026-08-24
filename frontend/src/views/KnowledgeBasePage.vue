@@ -4,7 +4,7 @@
       <div>
         <h2 class="page-banner__title">知识库管理</h2>
         <p class="page-banner__desc">
-          管理单用户模式下的知识库条目，支持创建、分页浏览、详情查看、编辑和删除。
+          管理当前登录用户的知识库，支持创建、分页浏览、详情查看、编辑和删除。
         </p>
       </div>
       <div class="page-banner__meta">
@@ -15,10 +15,6 @@
         <div class="page-banner__meta-card">
           <label>当前页条目</label>
           <strong>{{ items.length }}</strong>
-        </div>
-        <div class="page-banner__meta-card">
-          <label>当前 owner</label>
-          <strong>{{ DEFAULT_OWNER_ID }}</strong>
         </div>
         <div class="page-banner__meta-card">
           <label>接口范围</label>
@@ -122,11 +118,8 @@ import {
   fetchKnowledgeBaseList,
   updateKnowledgeBase,
 } from '@/services/knowledge-base-service';
-import { DEFAULT_OWNER_ID } from '@/constants/app';
 import { formatDateTime } from '@/utils/formatters';
 import { normalizeErrorMessage } from '@/utils/api';
-
-/** MVP 阶段默认归属用户 ID，后续接入认证后由登录态提供。 */
 
 /** 表格列定义。 */
 const columns = [
@@ -199,7 +192,6 @@ async function loadKnowledgeBaseList(filters = {}) {
     const params = {
       page: filters.page || page.value,
       pageSize: filters.pageSize || pageSize.value,
-      ownerId: filters.ownerId || DEFAULT_OWNER_ID,
     };
     /** 列表响应数据。 */
     const result = await fetchKnowledgeBaseList(params);
@@ -265,7 +257,7 @@ async function openDetailDrawer(record) {
   detailLoading.value = true;
 
   try {
-    activeKnowledgeBase.value = await fetchKnowledgeBaseDetail(record.id, record.owner_id || DEFAULT_OWNER_ID);
+    activeKnowledgeBase.value = await fetchKnowledgeBaseDetail(record.id);
   } catch (error) {
     message.error(normalizeErrorMessage(error));
   } finally {
@@ -298,14 +290,12 @@ async function handleSubmit(payload) {
     if (formMode.value === 'edit' && editingRecord.value) {
       await updateKnowledgeBase({
         id: editingRecord.value.id,
-        ownerId: editingRecord.value.owner_id || DEFAULT_OWNER_ID,
         ...payload,
       });
       message.success('知识库已更新');
     } else {
       await createKnowledgeBase({
         ...payload,
-        ownerId: DEFAULT_OWNER_ID,
       });
       message.success('知识库已创建');
     }
@@ -336,7 +326,7 @@ function handleDelete(record) {
     cancelText: '取消',
     async onOk() {
       try {
-        await deleteKnowledgeBase(record.id, record.owner_id || DEFAULT_OWNER_ID);
+        await deleteKnowledgeBase(record.id);
         await loadKnowledgeBaseList();
         if (activeKnowledgeBase.value?.id === record.id) {
           activeKnowledgeBase.value = null;

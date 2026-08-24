@@ -8,6 +8,8 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.deps import get_current_user
+from app.models.user import User
 from app.schemas.common import error_response, success_response
 from app.schemas.document import (
     DocumentChunkRead,
@@ -40,6 +42,7 @@ async def create(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     object_storage=Depends(get_object_storage),
+    current_user: User = Depends(get_current_user),
 ):
     """上传文件到 MinIO 并创建文档记录，不自动切片。"""
 
@@ -65,7 +68,11 @@ async def create(
 
 
 @router.post("/chunk")
-def chunk(payload: DocumentChunkRequest, db: Session = Depends(get_db)):
+def chunk(
+    payload: DocumentChunkRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """手动触发文档解析与切片任务。"""
 
     document, task_id, error_message = start_document_chunking(db, payload.id)
@@ -80,7 +87,11 @@ def chunk(payload: DocumentChunkRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/embed")
-def embed(payload: DocumentEmbedRequest, db: Session = Depends(get_db)):
+def embed(
+    payload: DocumentEmbedRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """手动触发文档向量化（Embedding → Milvus），成功后 status=embedded。
 
     排查：若长期停在 embedding，检查 Celery Worker 是否加载 embedding_tasks、
@@ -104,6 +115,7 @@ def list_items(
     page_size: int = Query(default=10, ge=1, le=100),
     knowledge_base_id: int | None = Query(default=None, gt=0),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """分页查询文档列表，可按知识库过滤。"""
 
@@ -118,7 +130,11 @@ def list_items(
 
 
 @router.get("/detail")
-def detail(id: int = Query(..., gt=0), db: Session = Depends(get_db)):
+def detail(
+    id: int = Query(..., gt=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """查询文档详情。"""
 
     document = get_document(db, id)
@@ -136,6 +152,7 @@ def chunks(
     page_size: int = Query(default=10, ge=1, le=100),
     parent_id: int | None = Query(default=None, gt=0, description="可选；传入则只返回该父块下的子块"),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """分页查询文档切片列表。
 
@@ -157,7 +174,11 @@ def chunks(
 
 
 @router.put("/update")
-def update(payload: DocumentUpdate, db: Session = Depends(get_db)):
+def update(
+    payload: DocumentUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """更新文档文件名。"""
 
     document = update_document(db, payload)
@@ -173,6 +194,7 @@ def delete(
     id: int = Query(..., gt=0),
     db: Session = Depends(get_db),
     object_storage=Depends(get_object_storage),
+    current_user: User = Depends(get_current_user),
 ):
     """删除文档记录和对应的 MinIO 对象。"""
 
@@ -188,6 +210,7 @@ def download(
     id: int = Query(..., gt=0),
     db: Session = Depends(get_db),
     object_storage=Depends(get_object_storage),
+    current_user: User = Depends(get_current_user),
 ):
     """通过后端下载接口返回 MinIO 中的文件流。"""
 

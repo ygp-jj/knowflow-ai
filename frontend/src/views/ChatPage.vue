@@ -168,7 +168,7 @@
  * 功能：多轮会话问答页（5B）。
  *
  * 交接要点：
- * 1. userId 使用 DEFAULT_OWNER_ID（与知识库 owner 联调方式一致）
+ * 1. 身份由 JWT Bearer 决定，前端不再传 userId
  * 2. 提问只调 askSessionStream；停止 = AbortController.abort()，后端不落半截 assistant
  * 3. 停止后本地去掉 streaming 助手气泡；刷新 messages/list 应只见已落库的 user
  * 4. 双击或点「改名」可改 title；首问后端会把「新会话」自动改成问题截断
@@ -186,7 +186,6 @@ import {
   updateSessionTitle,
 } from '@/services/chat-service';
 import { fetchKnowledgeBaseList } from '@/services/knowledge-base-service';
-import { DEFAULT_OWNER_ID } from '@/constants/app';
 import { normalizeErrorMessage } from '@/utils/api';
 import { renderMarkdown } from '@/utils/markdown';
 
@@ -194,9 +193,6 @@ import { renderMarkdown } from '@/utils/markdown';
 const DEFAULT_SESSION_TITLE = '新会话';
 /** 与后端 SESSION_TITLE_MAX_LEN 一致。 */
 const SESSION_TITLE_MAX_LEN = 50;
-
-/** 当前联调用户 ID。 */
-const userId = DEFAULT_OWNER_ID;
 
 /** 知识库下拉。 */
 const knowledgeBaseOptions = ref([]);
@@ -258,7 +254,6 @@ async function loadKnowledgeBases() {
     const data = await fetchKnowledgeBaseList({
       page: 1,
       pageSize: 100,
-      ownerId: userId,
     });
     knowledgeBaseOptions.value = data.items || [];
   } catch (error) {
@@ -275,7 +270,7 @@ async function loadKnowledgeBases() {
 async function loadSessions() {
   sessionsLoading.value = true;
   try {
-    const data = await fetchSessionList({ userId, page: 1, pageSize: 50 });
+    const data = await fetchSessionList({ page: 1, pageSize: 50 });
     sessions.value = data.items || [];
   } catch (error) {
     message.error(normalizeErrorMessage(error));
@@ -296,7 +291,6 @@ async function handleCreateSession() {
   creatingSession.value = true;
   try {
     const session = await createSession({
-      userId,
       knowledgeBaseId: createKnowledgeBaseId.value,
     });
     await loadSessions();
@@ -334,7 +328,6 @@ async function loadMessages(sessionId) {
   try {
     const data = await fetchMessageList({
       sessionId,
-      userId,
       page: 1,
       pageSize: 200,
     });
@@ -369,7 +362,7 @@ async function handleSaveTitle(item) {
     return;
   }
   try {
-    await updateSessionTitle({ id: item.id, userId, title });
+    await updateSessionTitle({ id: item.id, title });
     editingSessionId.value = null;
     patchSessionTitleLocal(item.id, title);
     message.success('标题已更新');
@@ -390,7 +383,7 @@ function handleDeleteSession(item) {
     okType: 'danger',
     async onOk() {
       try {
-        await deleteSession(item.id, userId);
+        await deleteSession(item.id);
         if (activeSessionId.value === item.id) {
           activeSessionId.value = null;
           displayMessages.value = [];
@@ -535,7 +528,6 @@ async function handleAsk() {
     await askSessionStream(
       {
         sessionId: activeSessionId.value,
-        userId,
         question: text,
       },
       {

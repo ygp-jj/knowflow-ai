@@ -16,10 +16,11 @@ BEGIN;
 -- =========================================================
 INSERT INTO users (id, username, email, hashed_password, created_at, updated_at)
 VALUES
-    (101, 'hr_admin', 'hr_admin@knowflow.ai', 'demo-hash-hr', NOW(), NOW()),
-    (102, 'finance_admin', 'finance_admin@knowflow.ai', 'demo-hash-finance', NOW(), NOW()),
-    (103, 'ops_admin', 'ops_admin@knowflow.ai', 'demo-hash-ops', NOW(), NOW()),
-    (104, 'employee_demo', 'employee_demo@knowflow.ai', 'demo-hash-employee', NOW(), NOW())
+    -- 演示密码统一为 demo123456（bcrypt）；已有库可重跑本脚本或单独 UPDATE hashed_password
+    (101, 'hr_admin', 'hr_admin@knowflow.ai', '$2b$12$jLRQnn2kAn3atfpId52Xsuxk58qSlsblfVt4mDxlwZEFHTyNbYP..', NOW(), NOW()),
+    (102, 'finance_admin', 'finance_admin@knowflow.ai', '$2b$12$jLRQnn2kAn3atfpId52Xsuxk58qSlsblfVt4mDxlwZEFHTyNbYP..', NOW(), NOW()),
+    (103, 'ops_admin', 'ops_admin@knowflow.ai', '$2b$12$jLRQnn2kAn3atfpId52Xsuxk58qSlsblfVt4mDxlwZEFHTyNbYP..', NOW(), NOW()),
+    (104, 'employee_demo', 'employee_demo@knowflow.ai', '$2b$12$jLRQnn2kAn3atfpId52Xsuxk58qSlsblfVt4mDxlwZEFHTyNbYP..', NOW(), NOW())
 ON CONFLICT (id) DO UPDATE SET
     username = EXCLUDED.username,
     email = EXCLUDED.email,

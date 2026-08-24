@@ -50,7 +50,8 @@
           <h1 class="admin-layout__title">{{ currentTitle }}</h1>
         </div>
         <div class="admin-layout__header-actions">
-          <ATag color="blue">owner_id = {{ DEFAULT_OWNER_ID }}</ATag>
+          <ATag color="blue">{{ displayName }}</ATag>
+          <AButton type="default" @click="handleLogout">退出登录</AButton>
           <AButton type="text" class="admin-layout__toggle" @click="toggleCollapsed">
             <MenuFoldOutlined v-if="!collapsed" />
             <MenuUnfoldOutlined v-else />
@@ -76,7 +77,7 @@ import {
   MenuUnfoldOutlined,
   MessageOutlined,
 } from '@ant-design/icons-vue';
-import { DEFAULT_OWNER_ID } from '@/constants/app';
+import { clearAuthStorage, getCachedUser } from '@/stores/auth';
 
 /** 是否折叠侧边栏。 */
 const collapsed = ref(false);
@@ -87,6 +88,9 @@ const router = useRouter();
 
 /** 当前页面标题。 */
 const currentTitle = computed(() => route.meta?.title || '管理台');
+
+/** 顶栏展示的用户名。 */
+const displayName = computed(() => getCachedUser()?.username || '已登录');
 
 /**
  * 切换侧边栏折叠状态。
@@ -112,6 +116,15 @@ function handleBreakpoint(broken) {
  */
 function navigateTo(name) {
   router.push({ name });
+}
+
+/**
+ * 退出登录：清 token 并跳转登录页。
+ * @returns {void}
+ */
+function handleLogout() {
+  clearAuthStorage();
+  router.push({ name: 'login' });
 }
 </script>
 

@@ -45,6 +45,7 @@ const USED_ANTD_COMPONENTS = [
   Form.Item,
   Input,
   Input.TextArea,
+  Input.Password,
   Upload.Dragger,
   Pagination,
   Spin,

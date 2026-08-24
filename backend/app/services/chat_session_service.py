@@ -1,7 +1,7 @@
 """聊天会话 CRUD 与消息查询。
 
-约定（5B）：
-- user_id / knowledge_base_id 由前端显式传入（联调阶段，后续可换登录态）
+约定（5B + 登录鉴权）：
+- user_id 由 JWT 当前用户注入，前端不再传入
 - 删除会话依赖 DB CASCADE，同时清掉消息与引用
 - 默认标题「新会话」；仅该默认值可被首条用户问题自动覆盖
 """
@@ -36,18 +36,19 @@ def _truncate_title(text: str) -> str:
     return cleaned[:SESSION_TITLE_MAX_LEN] + "…"
 
 
-def create_session(db: Session, payload: ChatSessionCreate) -> ChatSession:
+def create_session(db: Session, payload: ChatSessionCreate, *, user_id: int) -> ChatSession:
     """创建会话并绑定知识库。
 
     参数:
         db: 数据库会话。
         payload: 创建参数。
+        user_id: 当前登录用户 ID。
     返回:
         已落库的 ChatSession。
     """
     kb = (
         db.query(KnowledgeBase)
-        .filter(KnowledgeBase.id == payload.knowledge_base_id)
+        .filter(KnowledgeBase.id == payload.knowledge_base_id, KnowledgeBase.owner_id == user_id)
         .first()
     )
     if kb is None:
@@ -58,7 +59,7 @@ def create_session(db: Session, payload: ChatSessionCreate) -> ChatSession:
 
     session = ChatSession(
         knowledge_base_id=payload.knowledge_base_id,
-        user_id=payload.user_id,
+        user_id=user_id,
         title=title,
     )
     db.add(session)
@@ -95,9 +96,14 @@ def get_session(db: Session, *, session_id: int, user_id: int) -> ChatSession | 
     )
 
 
-def update_session_title(db: Session, payload: ChatSessionUpdate) -> ChatSession | None:
+def update_session_title(
+    db: Session,
+    payload: ChatSessionUpdate,
+    *,
+    user_id: int,
+) -> ChatSession | None:
     """手动改会话标题。"""
-    session = get_session(db, session_id=payload.id, user_id=payload.user_id)
+    session = get_session(db, session_id=payload.id, user_id=user_id)
     if session is None:
         return None
     session.title = _truncate_title(payload.title)

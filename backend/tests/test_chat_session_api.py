@@ -15,6 +15,7 @@ from app.models.knowledge_base import KnowledgeBase
 from app.models.user import User
 from app.schemas.chat import ChatReference, DEFAULT_SESSION_TITLE
 from app.services.rag_service import NO_HIT_ANSWER, SessionStreamGate, iter_session_ask_events
+from tests.auth_test_utils import auth_header_for_user
 
 
 class ChatSessionApiTests(unittest.TestCase):
@@ -50,6 +51,7 @@ class ChatSessionApiTests(unittest.TestCase):
 
         app.dependency_overrides[get_db] = override_get_db
         self.client = TestClient(app)
+        self.auth_headers = auth_header_for_user(101, username="u")
 
     def tearDown(self):
         app.dependency_overrides.clear()
@@ -58,7 +60,8 @@ class ChatSessionApiTests(unittest.TestCase):
     def test_session_crud_and_auto_title(self):
         create_resp = self.client.post(
             "/api/v1/chat/sessions/create",
-            json={"user_id": 101, "knowledge_base_id": 201},
+            json={"knowledge_base_id": 201},
+            headers=self.auth_headers,
         )
         self.assertEqual(create_resp.status_code, 200)
         body = create_resp.json()
@@ -69,24 +72,28 @@ class ChatSessionApiTests(unittest.TestCase):
 
         list_resp = self.client.get(
             "/api/v1/chat/sessions/list",
-            params={"user_id": 101, "page": 1, "page_size": 10},
+            params={"page": 1, "page_size": 10},
+            headers=self.auth_headers,
         )
         self.assertEqual(list_resp.json()["data"]["total"], 1)
 
         rename = self.client.put(
             "/api/v1/chat/sessions/update",
-            json={"id": session_id, "user_id": 101, "title": "我的请假会话"},
+            json={"id": session_id, "title": "我的请假会话"},
+            headers=self.auth_headers,
         )
         self.assertEqual(rename.json()["data"]["title"], "我的请假会话")
 
         delete_resp = self.client.delete(
             "/api/v1/chat/sessions/delete",
-            params={"id": session_id, "user_id": 101},
+            params={"id": session_id},
+            headers=self.auth_headers,
         )
         self.assertEqual(delete_resp.json()["code"], 0)
         list_resp2 = self.client.get(
             "/api/v1/chat/sessions/list",
-            params={"user_id": 101},
+            params={},
+            headers=self.auth_headers,
         )
         self.assertEqual(list_resp2.json()["data"]["total"], 0)
 
@@ -97,7 +104,8 @@ class ChatSessionApiTests(unittest.TestCase):
 
         create_resp = self.client.post(
             "/api/v1/chat/sessions/create",
-            json={"user_id": 101, "knowledge_base_id": 201},
+            json={"knowledge_base_id": 201},
+            headers=self.auth_headers,
         )
         session_id = create_resp.json()["data"]["id"]
 
@@ -133,7 +141,8 @@ class ChatSessionApiTests(unittest.TestCase):
 
         response = self.client.post(
             "/api/v1/chat/sessions/ask-stream",
-            json={"session_id": session_id, "user_id": 101, "question": "年假几天"},
+            json={"session_id": session_id, "question": "年假几天"},
+            headers=self.auth_headers,
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn("event: token", response.text)
@@ -153,7 +162,8 @@ class ChatSessionApiTests(unittest.TestCase):
 
         msg_list = self.client.get(
             "/api/v1/chat/messages/list",
-            params={"session_id": session_id, "user_id": 101},
+            params={"session_id": session_id},
+            headers=self.auth_headers,
         )
         self.assertEqual(msg_list.json()["data"]["total"], 2)
 
@@ -163,7 +173,8 @@ class ChatSessionApiTests(unittest.TestCase):
 
         create_resp = self.client.post(
             "/api/v1/chat/sessions/create",
-            json={"user_id": 101, "knowledge_base_id": 201},
+            json={"knowledge_base_id": 201},
+            headers=self.auth_headers,
         )
         session_id = create_resp.json()["data"]["id"]
         mock_prepare.return_value = RetrievalBundle(
@@ -176,7 +187,8 @@ class ChatSessionApiTests(unittest.TestCase):
         )
         response = self.client.post(
             "/api/v1/chat/sessions/ask-stream",
-            json={"session_id": session_id, "user_id": 101, "question": "无关问题xyz"},
+            json={"session_id": session_id, "question": "无关问题xyz"},
+            headers=self.auth_headers,
         )
         self.assertIn(NO_HIT_ANSWER[:8], response.text)
         db = self.SessionLocal()
@@ -189,12 +201,14 @@ class ChatSessionApiTests(unittest.TestCase):
         """已手动改名后，提问不再覆盖 title。"""
         create_resp = self.client.post(
             "/api/v1/chat/sessions/create",
-            json={"user_id": 101, "knowledge_base_id": 201},
+            json={"knowledge_base_id": 201},
+            headers=self.auth_headers,
         )
         session_id = create_resp.json()["data"]["id"]
         self.client.put(
             "/api/v1/chat/sessions/update",
-            json={"id": session_id, "user_id": 101, "title": "固定标题"},
+            json={"id": session_id, "title": "固定标题"},
+            headers=self.auth_headers,
         )
 
         db = self.SessionLocal()
@@ -229,7 +243,8 @@ class ChatSessionApiTests(unittest.TestCase):
 
         create_resp = self.client.post(
             "/api/v1/chat/sessions/create",
-            json={"user_id": 101, "knowledge_base_id": 201},
+            json={"knowledge_base_id": 201},
+            headers=self.auth_headers,
         )
         session_id = create_resp.json()["data"]["id"]
 
@@ -282,7 +297,8 @@ class ChatSessionApiTests(unittest.TestCase):
 
         create_resp = self.client.post(
             "/api/v1/chat/sessions/create",
-            json={"user_id": 101, "knowledge_base_id": 201},
+            json={"knowledge_base_id": 201},
+            headers=self.auth_headers,
         )
         session_id = create_resp.json()["data"]["id"]
         mock_prepare.return_value = RetrievalBundle(
@@ -330,7 +346,8 @@ class ChatSessionApiTests(unittest.TestCase):
 
         create_resp = self.client.post(
             "/api/v1/chat/sessions/create",
-            json={"user_id": 101, "knowledge_base_id": 201},
+            json={"knowledge_base_id": 201},
+            headers=self.auth_headers,
         )
         session_id = create_resp.json()["data"]["id"]
         mock_prepare.return_value = RetrievalBundle(
@@ -369,7 +386,8 @@ class ChatSessionApiTests(unittest.TestCase):
 
         create_resp = self.client.post(
             "/api/v1/chat/sessions/create",
-            json={"user_id": 101, "knowledge_base_id": 201},
+            json={"knowledge_base_id": 201},
+            headers=self.auth_headers,
         )
         session_id = create_resp.json()["data"]["id"]
         mock_prepare.return_value = RetrievalBundle(

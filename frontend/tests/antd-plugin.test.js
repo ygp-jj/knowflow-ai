@@ -44,5 +44,7 @@ test('registerAntdComponents only registers the components used by current pages
     'AUploadDragger',
     'APagination',
     'ASpin',
+    'ATabs',
+    'ATabPane',
   ]);
 });

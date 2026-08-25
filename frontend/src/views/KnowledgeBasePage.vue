@@ -198,8 +198,8 @@ async function loadKnowledgeBaseList(filters = {}) {
 
     items.value = result.items || [];
     total.value = result.total || 0;
-    page.value = result.page || params.page;
-    pageSize.value = result.page_size || params.pageSize;
+    page.value = Number(result.page) || params.page;
+    pageSize.value = Number(result.page_size) || params.pageSize;
   } finally {
     listLoading.value = false;
   }
@@ -345,10 +345,15 @@ function handleDelete(record) {
  * @returns {Promise<void>}
  */
 async function handleTableChange(pager) {
+  // 列表加载中忽略 Table 因 dataSource 回写触发的二次 change，避免整页反复刷请求。
+  if (listLoading.value) {
+    return;
+  }
+
   /** 目标页码。 */
-  const nextPage = pager.current;
+  const nextPage = Number(pager?.current) || page.value;
   /** 目标分页大小。 */
-  const nextPageSize = pager.pageSize;
+  const nextPageSize = Number(pager?.pageSize) || pageSize.value;
 
   // Ant Design Vue 在分页对象更新后可能再次触发 change，若页码未变则跳过，避免死循环请求。
   if (nextPage === page.value && nextPageSize === pageSize.value) {

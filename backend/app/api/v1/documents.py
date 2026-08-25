@@ -1,4 +1,7 @@
-"""文档管理 HTTP 路由。"""
+"""文档管理 HTTP 路由。
+
+文档归属通过知识库 owner_id 隔离：仅当前登录用户自己的知识库下文档可见可操作。
+"""
 
 from io import BytesIO
 from urllib.parse import quote
@@ -44,7 +47,7 @@ async def create(
     object_storage=Depends(get_object_storage),
     current_user: User = Depends(get_current_user),
 ):
-    """上传文件到 MinIO 并创建文档记录，不自动切片。"""
+    """上传文件到 MinIO 并创建文档记录，不自动切片（仅本人知识库）。"""
 
     file_bytes = await file.read()
     file_name = file.filename or "unnamed-file"
@@ -57,6 +60,7 @@ async def create(
         file_name=file_name,
         file_bytes=file_bytes,
         content_type=content_type,
+        owner_id=current_user.id,
     )
     if document is None:
         return error_response(404, "知识库不存在")
@@ -75,7 +79,9 @@ def chunk(
 ):
     """手动触发文档解析与切片任务。"""
 
-    document, task_id, error_message = start_document_chunking(db, payload.id)
+    document, task_id, error_message = start_document_chunking(
+        db, payload.id, owner_id=current_user.id
+    )
     if document is None:
         return error_response(404, error_message or "文档不存在")
     if error_message:
@@ -92,13 +98,11 @@ def embed(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """手动触发文档向量化（Embedding → Milvus），成功后 status=embedded。
+    """手动触发文档向量化（Embedding → Milvus），成功后 status=embedded。"""
 
-    排查：若长期停在 embedding，检查 Celery Worker 是否加载 embedding_tasks、
-    Redis 是否可达、EMBEDDING_* / MILVUS_* 配置与日志。
-    """
-
-    document, task_id, error_message = start_document_embedding(db, payload.id)
+    document, task_id, error_message = start_document_embedding(
+        db, payload.id, owner_id=current_user.id
+    )
     if document is None:
         return error_response(404, error_message or "文档不存在")
     if error_message:
@@ -117,9 +121,15 @@ def list_items(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """分页查询文档列表，可按知识库过滤。"""
+    """分页查询当前用户知识库下的文档列表，可按知识库过滤。"""
 
-    items, total = list_documents(db, page, page_size, knowledge_base_id)
+    items, total = list_documents(
+        db,
+        page,
+        page_size,
+        knowledge_base_id,
+        owner_id=current_user.id,
+    )
     data = {
         "items": [DocumentRead.model_validate(item) for item in items],
         "total": total,
@@ -135,9 +145,9 @@ def detail(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """查询文档详情。"""
+    """查询文档详情（仅本人知识库）。"""
 
-    document = get_document(db, id)
+    document = get_document(db, id, owner_id=current_user.id)
     if document is None:
         return error_response(404, "文档不存在")
 
@@ -154,12 +164,9 @@ def chunks(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """分页查询文档切片列表。
+    """分页查询文档切片列表（仅本人知识库下的文档）。"""
 
-    支持 parent_id：命中父块后，用同一接口继续查询其子块。
-    """
-
-    document = get_document(db, document_id)
+    document = get_document(db, document_id, owner_id=current_user.id)
     if document is None:
         return error_response(404, "文档不存在")
 
@@ -181,7 +188,7 @@ def update(
 ):
     """更新文档文件名。"""
 
-    document = update_document(db, payload)
+    document = update_document(db, payload, owner_id=current_user.id)
     if document is None:
         return error_response(404, "文档不存在")
 
@@ -198,7 +205,7 @@ def delete(
 ):
     """删除文档记录和对应的 MinIO 对象。"""
 
-    deleted = delete_document(db, object_storage, id)
+    deleted = delete_document(db, object_storage, id, owner_id=current_user.id)
     if not deleted:
         return error_response(404, "文档不存在")
 
@@ -214,7 +221,9 @@ def download(
 ):
     """通过后端下载接口返回 MinIO 中的文件流。"""
 
-    document, file_payload = get_download_payload(db, object_storage, id)
+    document, file_payload = get_download_payload(
+        db, object_storage, id, owner_id=current_user.id
+    )
     if document is None or file_payload is None:
         return error_response(404, "文档不存在")
 

@@ -18,6 +18,7 @@ import {
   Space,
   Spin,
   Table,
+  Tabs,
   Tag,
   Upload,
 } from 'ant-design-vue';
@@ -49,6 +50,8 @@ const USED_ANTD_COMPONENTS = [
   Upload.Dragger,
   Pagination,
   Spin,
+  Tabs,
+  Tabs.TabPane,
 ];
 
 /**

@@ -320,6 +320,49 @@ class DocumentsApiTests(unittest.TestCase):
         self.assertEqual(body["code"], 400)
         self.assertIn("不可向量化", body["message"])
 
+    def test_list_and_detail_isolated_by_owner(self):
+        """其他用户知识库下的文档不可见、不可操作。"""
+        from app.models.knowledge_base import KnowledgeBase
+
+        db = self.SessionLocal()
+        db.add(User(id=202, username="other", email="other@example.com", hashed_password="x"))
+        db.add(KnowledgeBase(id=2, name="他人知识库", description=None, owner_id=202))
+        db.add(
+            Document(
+                id=99,
+                knowledge_base_id=2,
+                file_name="secret.pdf",
+                file_type="pdf",
+                file_path="/secret.pdf",
+                file_size=10,
+                status="uploaded",
+                chunk_count=0,
+            )
+        )
+        db.commit()
+        db.close()
+
+        # 用户 101 列表不应包含他人文档
+        list_resp = self.client.get(
+            "/api/v1/documents/list?page=1&page_size=50",
+            headers=self.auth_headers,
+        )
+        self.assertEqual(list_resp.json()["code"], 0)
+        ids = [item["id"] for item in list_resp.json()["data"]["items"]]
+        self.assertNotIn(99, ids)
+
+        detail_resp = self.client.get(
+            "/api/v1/documents/detail?id=99",
+            headers=self.auth_headers,
+        )
+        self.assertEqual(detail_resp.json()["code"], 404)
+
+        delete_resp = self.client.delete(
+            "/api/v1/documents/delete?id=99",
+            headers=self.auth_headers,
+        )
+        self.assertEqual(delete_resp.json()["code"], 404)
+
 
 if __name__ == "__main__":
     unittest.main()

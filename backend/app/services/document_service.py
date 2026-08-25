@@ -31,9 +31,17 @@ logger = logging.getLogger(__name__)
 DEFAULT_DOCUMENT_STATUS = "uploaded"
 
 
-def get_knowledge_base(db: Session, knowledge_base_id: int) -> KnowledgeBase | None:
-    """查询知识库是否存在（内部校验用，前端无需关心）。"""
-    return db.query(KnowledgeBase).filter(KnowledgeBase.id == knowledge_base_id).first()
+def get_knowledge_base(
+    db: Session,
+    knowledge_base_id: int,
+    *,
+    owner_id: int | None = None,
+) -> KnowledgeBase | None:
+    """查询知识库是否存在；传入 owner_id 时校验归属。"""
+    query = db.query(KnowledgeBase).filter(KnowledgeBase.id == knowledge_base_id)
+    if owner_id is not None:
+        query = query.filter(KnowledgeBase.owner_id == owner_id)
+    return query.first()
 
 
 def build_object_name(knowledge_base_id: int, file_name: str) -> str:
@@ -70,30 +78,14 @@ def create_document(
     file_name: str,
     file_bytes: bytes,
     content_type: str | None = None,
+    *,
+    owner_id: int,
 ) -> Document | None:
     """【前端上传文档时调用】上传文件到 MinIO 并创建文档记录。
 
-    这是整个文档上传流程的入口，前端调用 /api/documents/upload 时，后端会调用此函数。
-
-    工作流程（前端可见的步骤）：
-        1. 检查知识库是否存在（不存在则返回 None）
-        2. 构建对象存储路径（自动防重名）
-        3. 上传文件到 MinIO
-        4. 在数据库中创建文档记录，状态默认为 "uploaded"
-        5. 提交事务，返回包含数据库生成字段（id、created_at 等）的文档对象
-
-    返回的文档对象中，前端最关心的字段：
-        - id: 文档唯一标识（后续查询、删除、触发切片都用它）
-        - status: 当前状态（刚上传时为 "uploaded"）
-        - file_name: 原始文件名
-        - file_size: 文件大小（字节）
-        - chunk_count: 切片数（初始为 0）
-
-    注意：
-        上传成功后，前端通常需要调用“触发切片”接口（start_document_chunking）
-        才能真正完成文档的解析和切块。
+    仅允许上传到当前用户拥有的知识库。
     """
-    if get_knowledge_base(db, knowledge_base_id) is None:
+    if get_knowledge_base(db, knowledge_base_id, owner_id=owner_id) is None:
         return None
 
     object_content_type = content_type or "application/octet-stream"
@@ -120,9 +112,11 @@ def list_documents(
     db: Session,
     page: int,
     page_size: int,
-    knowledge_base_id: int | None
+    knowledge_base_id: int | None,
+    *,
+    owner_id: int,
 ) -> tuple[list[Document], int]:
-    """【前端查询文档列表】分页获取文档，可按知识库过滤。
+    """【前端查询文档列表】分页获取**当前用户**知识库下的文档。
 
     前端调用场景：
         - 知识库详情页展示文档列表
@@ -130,17 +124,14 @@ def list_documents(
 
     返回顺序：
         按 id 降序（最新的文档排在最前面）
-
-    返回值：
-        - 第一项: 当前页的文档列表
-        - 第二项: 总记录数（用于前端分页计算）
-
-    前端展示建议：
-        - 显示 status 字段，让用户知道文档当前是“待处理”还是“已切片”
-        - 如果 status = "failed"，展示 error_message 字段（如有）
     """
-    query = db.query(Document)
+    query = (
+        db.query(Document)
+        .join(KnowledgeBase, Document.knowledge_base_id == KnowledgeBase.id)
+        .filter(KnowledgeBase.owner_id == owner_id)
+    )
     if knowledge_base_id is not None:
+        # 同时校验该知识库属于当前用户（join 已限制 owner）
         query = query.filter(Document.knowledge_base_id == knowledge_base_id)
     total = query.count()
     items = (
@@ -152,20 +143,29 @@ def list_documents(
     return items, total
 
 
-def get_document(db: Session, document_id: int) -> Document | None:
-    """【内部查询】按 ID 获取单个文档对象（前端不直接调用，由其他函数复用）。"""
-    return db.query(Document).filter(Document.id == document_id).first()
+def get_document(
+    db: Session,
+    document_id: int,
+    *,
+    owner_id: int | None = None,
+) -> Document | None:
+    """按 ID 获取文档；传入 owner_id 时仅返回归属当前用户知识库的文档。"""
+    query = db.query(Document).filter(Document.id == document_id)
+    if owner_id is not None:
+        query = query.join(KnowledgeBase, Document.knowledge_base_id == KnowledgeBase.id).filter(
+            KnowledgeBase.owner_id == owner_id
+        )
+    return query.first()
 
 
-def update_document(db: Session, payload: DocumentUpdate) -> Document | None:
-    """【前端更新文档】修改文档的文件名。
-
-    前端调用场景：用户重命名已上传的文档。
-
-    注意：
-        目前只支持更新 file_name，如需扩展其他字段，需同步修改 Schema。
-    """
-    document = get_document(db, payload.id)
+def update_document(
+    db: Session,
+    payload: DocumentUpdate,
+    *,
+    owner_id: int,
+) -> Document | None:
+    """【前端更新文档】修改文档的文件名（仅本人知识库下的文档）。"""
+    document = get_document(db, payload.id, owner_id=owner_id)
     if document is None:
         return None
 
@@ -175,20 +175,15 @@ def update_document(db: Session, payload: DocumentUpdate) -> Document | None:
     return document
 
 
-def delete_document(db: Session, object_storage, document_id: int) -> bool:
-    """【前端删除文档】删除文档记录、MinIO 文件，并尽力清理 Milvus 向量。
-
-    工作流程：
-        1. 查询文档是否存在
-        2. best-effort 删除该文档在 Milvus 中的向量（失败只打日志，不阻断删除）
-        3. 从 MinIO 删除原始文件
-        4. 从数据库删除文档记录（切片通常由外键级联清理）
-
-    前端调用后：
-        文档及其切片会被移除；向量清理失败时可对照日志手动清 Milvus。
-        返回 True 表示删除成功，False 表示文档不存在。
-    """
-    document = get_document(db, document_id)
+def delete_document(
+    db: Session,
+    object_storage,
+    document_id: int,
+    *,
+    owner_id: int,
+) -> bool:
+    """【前端删除文档】删除本人知识库下的文档记录、MinIO 文件，并尽力清理 Milvus。"""
+    document = get_document(db, document_id, owner_id=owner_id)
     if document is None:
         return False
 
@@ -209,18 +204,15 @@ def delete_document(db: Session, object_storage, document_id: int) -> bool:
     return True
 
 
-def get_download_payload(db: Session, object_storage, document_id: int):
-    """【前端下载文档】获取文件内容和文档元数据。
-
-    前端调用场景：用户点击“下载”按钮时。
-
-    返回值：
-        - document: 文档元数据（包含文件名、文件类型等）
-        - file_payload: MinIO 返回的文件内容（包含 bytes、content_type 等）
-
-    如果文档不存在，两者都返回 None。
-    """
-    document = get_document(db, document_id)
+def get_download_payload(
+    db: Session,
+    object_storage,
+    document_id: int,
+    *,
+    owner_id: int,
+):
+    """【前端下载文档】获取本人知识库下文档的文件内容与元数据。"""
+    document = get_document(db, document_id, owner_id=owner_id)
     if document is None:
         return None, None
 
@@ -254,31 +246,14 @@ EMBEDDABLE_STATUSES = {"chunked", "embedded", "failed"}
 PROCESSING_STATUSES = {"parsing", "chunking", "embedding"}
 
 
-def start_document_chunking(db: Session, document_id: int) -> tuple[Document | None, str | None, str | None]:
-    """【前端手动触发切片】启动文档的异步解析 + 切片任务。
-
-    这是前端在文档上传后，或者文档处理失败后，手动点击“开始切片”时调用的接口。
-
-    返回值：
-        - document: 文档对象（可能为 None，表示文档不存在）
-        - task_id: Celery 任务 ID（可用于异步查询进度）
-        - error_message: 错误描述（成功时为 None）
-
-    前置校验（按顺序）：
-        1. 文档是否存在
-        2. 文档是否正在处理中（parsing / chunking / embedding）→ 拒绝重复触发
-        3. 文档状态是否可切片（uploaded / failed / chunked / embedded）→ 不可切则返回错误
-
-    前端调用后：
-        - 如果 task_id 不为 None，文档状态会被 Celery 任务更新为 "parsing"
-        - 前端点「刷新」观察 status 是否变为 "chunked" 或 "failed"（列表页不轮询）
-
-    特别说明：
-        - 即使文档已经是 "chunked"/"embedded"，也可以再次触发（重新切片/覆盖）
-        - 重新切片后需再次点「向量化」才会更新 Milvus
-        - 如果任务投递失败（如 Redis 不可用），会返回 error_message
-    """
-    document = get_document(db, document_id)
+def start_document_chunking(
+    db: Session,
+    document_id: int,
+    *,
+    owner_id: int,
+) -> tuple[Document | None, str | None, str | None]:
+    """【前端手动触发切片】启动文档的异步解析 + 切片任务（仅本人知识库）。"""
+    document = get_document(db, document_id, owner_id=owner_id)
     if document is None:
         return None, None, "文档不存在"
 
@@ -310,21 +285,14 @@ def enqueue_document_embedding(document_id: int) -> str | None:
         return None
 
 
-def start_document_embedding(db: Session, document_id: int) -> tuple[Document | None, str | None, str | None]:
-    """【前端手动触发向量化】启动 Embedding + 写入 Milvus 的异步任务。
-
-    状态预期：chunked/embedded/failed →（任务内）embedding → embedded | failed
-
-    返回值：
-        - document / task_id / error_message（与 start_document_chunking 同形）
-
-    前置校验：
-        1. 文档存在
-        2. 非处理中
-        3. 状态可向量化（chunked / embedded / failed）
-        4. chunk_count > 0（没有切片无法 Embedding）
-    """
-    document = get_document(db, document_id)
+def start_document_embedding(
+    db: Session,
+    document_id: int,
+    *,
+    owner_id: int,
+) -> tuple[Document | None, str | None, str | None]:
+    """【前端手动触发向量化】启动 Embedding + 写入 Milvus（仅本人知识库）。"""
+    document = get_document(db, document_id, owner_id=owner_id)
     if document is None:
         return None, None, "文档不存在"
 

@@ -72,6 +72,8 @@ class ChatApiTests(unittest.TestCase):
         body = response.json()
         self.assertEqual(body["code"], 0)
         self.assertEqual(body["data"]["answer"], "答案")
+        mock_ask.assert_called_once()
+        self.assertEqual(mock_ask.call_args.kwargs.get("owner_id"), 1)
 
     @patch("app.api.v1.chat.ask_knowledge_base")
     def test_ask_kb_not_found(self, mock_ask):

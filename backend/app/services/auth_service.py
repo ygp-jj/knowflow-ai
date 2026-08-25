@@ -1,10 +1,12 @@
-"""登录鉴权业务：校验用户名密码并签发 JWT。"""
+"""登录鉴权业务：校验用户名密码、注册并签发 JWT。"""
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from sqlalchemy.orm import Session
 
-from app.core.security import create_access_token, verify_password
+from app.core.security import create_access_token, hash_password, verify_password
 from app.models.user import User
 from app.schemas.auth import LoginRead, UserRead
 
@@ -62,4 +64,46 @@ def login(db: Session, *, username: str, password: str) -> LoginRead:
         LoginRead。
     """
     user = authenticate_user(db, username=username, password=password)
+    return build_login_result(user)
+
+
+def register_user(
+    db: Session,
+    *,
+    username: str,
+    email: str,
+    password: str,
+) -> LoginRead:
+    """注册新用户并自动签发 Token。
+
+    参数:
+        db: 数据库会话。
+        username: 用户名。
+        email: 邮箱。
+        password: 明文密码。
+    返回:
+        与 login 相同的 LoginRead。
+    抛出:
+        AuthServiceError: 用户名或邮箱已存在。
+    """
+    username = (username or "").strip()
+    email = (email or "").strip().lower()
+    if not username:
+        raise AuthServiceError("用户名不能为空", http_code=400)
+    if db.query(User.id).filter(User.username == username).first() is not None:
+        raise AuthServiceError("用户名已存在", http_code=400)
+    if db.query(User.id).filter(User.email == email).first() is not None:
+        raise AuthServiceError("邮箱已存在", http_code=400)
+
+    now = datetime.now(timezone.utc)
+    user = User(
+        username=username,
+        email=email,
+        hashed_password=hash_password(password),
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
     return build_login_result(user)

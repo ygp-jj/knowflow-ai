@@ -19,24 +19,25 @@ def load_database_url() -> str:
 
 
 class NeonSeedDataTests(unittest.TestCase):
-    def test_seed_sql_populates_every_table_with_four_rows(self):
+    def test_seed_sql_single_demo_user_and_expected_counts(self):
+        """单演示账号 seed：users=1，业务演示表各 2 条，prompt/model 仍 4 条。"""
         self.assertTrue(SEED_SQL_FILE_PATH.exists(), f"Missing seed SQL file: {SEED_SQL_FILE_PATH}")
         self.assertTrue(BOOTSTRAP_SQL_FILE_PATH.exists(), f"Missing bootstrap SQL file: {BOOTSTRAP_SQL_FILE_PATH}")
 
-        expected_tables = [
-            "users",
-            "knowledge_bases",
-            "documents",
-            "document_chunks",
-            "chat_sessions",
-            "chat_messages",
-            "chat_references",
-            "prompt_templates",
-            "model_configs",
-            "question_feedbacks",
-            "evaluation_cases",
-            "evaluation_runs",
-        ]
+        expected_counts = {
+            "users": 1,
+            "knowledge_bases": 2,
+            "documents": 2,
+            "document_chunks": 2,
+            "chat_sessions": 2,
+            "chat_messages": 2,
+            "chat_references": 2,
+            "prompt_templates": 4,
+            "model_configs": 4,
+            "question_feedbacks": 2,
+            "evaluation_cases": 2,
+            "evaluation_runs": 2,
+        }
 
         schema_name = f"test_seed_{uuid4().hex[:8]}"
         bootstrap_sql = BOOTSTRAP_SQL_FILE_PATH.read_text(encoding="utf-8")
@@ -50,10 +51,13 @@ class NeonSeedDataTests(unittest.TestCase):
                     cur.execute(bootstrap_sql)
                     cur.execute(seed_sql)
 
-                    for table_name in expected_tables:
+                    for table_name, expected in expected_counts.items():
                         cur.execute(f'SELECT COUNT(*) FROM "{schema_name}".{table_name}')
                         row_count = cur.fetchone()[0]
-                        self.assertEqual(row_count, 4, table_name)
+                        self.assertEqual(row_count, expected, table_name)
+
+                    cur.execute(f'SELECT username FROM "{schema_name}".users')
+                    self.assertEqual(cur.fetchone()[0], "hr_admin")
 
                     cur.execute(
                         f"""
@@ -63,7 +67,7 @@ class NeonSeedDataTests(unittest.TestCase):
                         WHERE cm.role = 'assistant'
                         """
                     )
-                    self.assertEqual(cur.fetchone()[0], 4)
+                    self.assertEqual(cur.fetchone()[0], 2)
                 finally:
                     cur.execute("RESET search_path")
                     cur.execute(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE')

@@ -1,26 +1,30 @@
--- KnowFlow AI 演示数据脚本
+-- KnowFlow AI 演示数据脚本（单演示账号版）
 -- 用途：
--- 1. 给已经建好的 KnowFlow 表插入一套可演示的假数据
--- 2. 每张表严格插入 4 条数据
--- 3. 数据围绕“公司制度知识库”主题，适合前端页面联动演示
+-- 1. 仅保留演示账号 hr_admin（id=101，密码 demo123456）
+-- 2. 清理其余种子用户及其知识库/文档/会话等关联数据
+-- 3. 写入归属 hr_admin 的请假库、远程办公库演示数据
 --
 -- 注意：
 -- 1. 这份脚本假设表已经存在
--- 2. 这份脚本使用固定 ID，便于跨表建立稳定关联
--- 3. 再次执行时会基于主键做更新，不会重复插入同一批数据
+-- 2. 再次执行时会清理多余用户并 upsert 演示数据
 
 BEGIN;
 
 -- =========================================================
--- 1. 用户表：4 个内部账号
+-- 0. 清理多余演示用户（CASCADE 会带走其知识库/文档/会话等）
+-- =========================================================
+DELETE FROM users WHERE id IN (102, 103, 104);
+DELETE FROM users WHERE username IN ('finance_admin', 'ops_admin', 'employee_demo');
+-- 清理历史上归属其他用户、现已无主的演示知识库（若仍存在）
+DELETE FROM knowledge_bases WHERE id IN (202, 203);
+
+-- =========================================================
+-- 1. 用户表：仅 1 个演示账号
 -- =========================================================
 INSERT INTO users (id, username, email, hashed_password, created_at, updated_at)
 VALUES
-    -- 演示密码统一为 demo123456（bcrypt）；已有库可重跑本脚本或单独 UPDATE hashed_password
-    (101, 'hr_admin', 'hr_admin@knowflow.ai', '$2b$12$jLRQnn2kAn3atfpId52Xsuxk58qSlsblfVt4mDxlwZEFHTyNbYP..', NOW(), NOW()),
-    (102, 'finance_admin', 'finance_admin@knowflow.ai', '$2b$12$jLRQnn2kAn3atfpId52Xsuxk58qSlsblfVt4mDxlwZEFHTyNbYP..', NOW(), NOW()),
-    (103, 'ops_admin', 'ops_admin@knowflow.ai', '$2b$12$jLRQnn2kAn3atfpId52Xsuxk58qSlsblfVt4mDxlwZEFHTyNbYP..', NOW(), NOW()),
-    (104, 'employee_demo', 'employee_demo@knowflow.ai', '$2b$12$jLRQnn2kAn3atfpId52Xsuxk58qSlsblfVt4mDxlwZEFHTyNbYP..', NOW(), NOW())
+    -- 演示密码 demo123456（bcrypt）
+    (101, 'hr_admin', 'hr_admin@knowflow.ai', '$2b$12$jLRQnn2kAn3atfpId52Xsuxk58qSlsblfVt4mDxlwZEFHTyNbYP..', NOW(), NOW())
 ON CONFLICT (id) DO UPDATE SET
     username = EXCLUDED.username,
     email = EXCLUDED.email,
@@ -28,13 +32,11 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = NOW();
 
 -- =========================================================
--- 2. 知识库表：4 个制度知识库
+-- 2. 知识库表：归属 hr_admin 的 2 个制度库
 -- =========================================================
 INSERT INTO knowledge_bases (id, name, description, owner_id, created_at, updated_at)
 VALUES
     (201, '员工请假制度库', '用于回答年假、病假、事假和请假流程相关问题。', 101, NOW(), NOW()),
-    (202, '员工报销制度库', '用于回答差旅、餐补、打车和发票报销相关问题。', 102, NOW(), NOW()),
-    (203, '新员工入职制度库', '用于回答入职材料、试用期和入职流程相关问题。', 103, NOW(), NOW()),
     (204, '远程办公制度库', '用于回答远程办公申请、审批和考勤要求相关问题。', 101, NOW(), NOW())
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
@@ -43,7 +45,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = NOW();
 
 -- =========================================================
--- 3. 文档表：每个知识库 1 份制度文档
+-- 3. 文档表
 -- =========================================================
 INSERT INTO documents (
     id,
@@ -60,8 +62,6 @@ INSERT INTO documents (
 )
 VALUES
     (301, 201, 'leave_policy_2026.pdf', 'pdf', '/demo/leave_policy_2026.pdf', 248576, 'chunked', NULL, 1, NOW(), NOW()),
-    (302, 202, 'expense_policy_2026.pdf', 'pdf', '/demo/expense_policy_2026.pdf', 315904, 'chunked', NULL, 1, NOW(), NOW()),
-    (303, 203, 'onboarding_guide_2026.pdf', 'pdf', '/demo/onboarding_guide_2026.pdf', 287232, 'chunked', NULL, 1, NOW(), NOW()),
     (304, 204, 'remote_work_policy_2026.pdf', 'pdf', '/demo/remote_work_policy_2026.pdf', 226304, 'chunked', NULL, 1, NOW(), NOW())
 ON CONFLICT (id) DO UPDATE SET
     knowledge_base_id = EXCLUDED.knowledge_base_id,
@@ -75,7 +75,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = NOW();
 
 -- =========================================================
--- 4. 文档切片表：每个文档 1 个核心摘要切片，共 4 条
+-- 4. 文档切片表
 -- =========================================================
 INSERT INTO document_chunks (
     id,
@@ -105,32 +105,6 @@ VALUES
         NOW()
     ),
     (
-        402,
-        302,
-        202,
-        0,
-        '差旅报销需在行程结束后 10 个自然日内提交，餐饮发票需附消费明细，打车报销单次上限为 120 元。',
-        'hash_expense_policy_402',
-        3,
-        64,
-        'vec_expense_402',
-        '{"section":"报销时限","topic":"差旅与打车报销"}'::jsonb,
-        NOW()
-    ),
-    (
-        403,
-        303,
-        203,
-        0,
-        '新员工入职当天需携带身份证、学历证明、银行卡信息和一寸照片，试用期默认 3 个月。',
-        'hash_onboarding_policy_403',
-        1,
-        52,
-        'vec_onboarding_403',
-        '{"section":"入职材料","topic":"入职准备与试用期"}'::jsonb,
-        NOW()
-    ),
-    (
         404,
         304,
         204,
@@ -155,14 +129,12 @@ ON CONFLICT (id) DO UPDATE SET
     metadata = EXCLUDED.metadata;
 
 -- =========================================================
--- 5. 聊天会话表：4 个真实问题场景
+-- 5. 聊天会话表（归属 hr_admin）
 -- =========================================================
 INSERT INTO chat_sessions (id, knowledge_base_id, user_id, title, created_at, updated_at)
 VALUES
-    (501, 201, 104, '年假申请需要提前多久提交', NOW(), NOW()),
-    (502, 202, 104, '差旅报销最晚多久内提交', NOW(), NOW()),
-    (503, 203, 104, '入职第一天需要带什么材料', NOW(), NOW()),
-    (504, 204, 104, '每周远程办公是否需要审批', NOW(), NOW())
+    (501, 201, 101, '年假申请需要提前多久提交', NOW(), NOW()),
+    (504, 204, 101, '每周远程办公是否需要审批', NOW(), NOW())
 ON CONFLICT (id) DO UPDATE SET
     knowledge_base_id = EXCLUDED.knowledge_base_id,
     user_id = EXCLUDED.user_id,
@@ -170,7 +142,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = NOW();
 
 -- =========================================================
--- 6. 聊天消息表：每个会话 1 条助手回答，共 4 条
+-- 6. 聊天消息表
 -- =========================================================
 INSERT INTO chat_messages (id, session_id, role, content, token_count, created_at)
 VALUES
@@ -180,22 +152,6 @@ VALUES
         'assistant',
         '根据请假制度，员工申请年假需要至少提前 3 个工作日提交审批；病假 1 天以内可以补提，超过 1 天需要补充医院证明。',
         78,
-        NOW()
-    ),
-    (
-        602,
-        502,
-        'assistant',
-        '根据报销制度，差旅报销需要在行程结束后 10 个自然日内提交；如果涉及餐饮发票，还需要附消费明细。',
-        74,
-        NOW()
-    ),
-    (
-        603,
-        503,
-        'assistant',
-        '根据入职制度，新员工入职当天需要携带身份证、学历证明、银行卡信息和一寸照片，试用期默认是 3 个月。',
-        71,
         NOW()
     ),
     (
@@ -213,7 +169,7 @@ ON CONFLICT (id) DO UPDATE SET
     token_count = EXCLUDED.token_count;
 
 -- =========================================================
--- 7. 聊天引用表：每条回答对应 1 条核心引用
+-- 7. 聊天引用表
 -- =========================================================
 INSERT INTO chat_references (
     id,
@@ -227,8 +183,6 @@ INSERT INTO chat_references (
 )
 VALUES
     (701, 601, 301, 401, 0.97, '员工申请年假需至少提前 3 个工作日提交审批。', 2, NOW()),
-    (702, 602, 302, 402, 0.96, '差旅报销需在行程结束后 10 个自然日内提交。', 3, NOW()),
-    (703, 603, 303, 403, 0.95, '新员工入职当天需携带身份证、学历证明、银行卡信息。', 1, NOW()),
     (704, 604, 304, 404, 0.98, '员工每周最多可申请 2 天远程办公，并需主管审批。', 4, NOW())
 ON CONFLICT (id) DO UPDATE SET
     message_id = EXCLUDED.message_id,
@@ -239,7 +193,7 @@ ON CONFLICT (id) DO UPDATE SET
     page_number = EXCLUDED.page_number;
 
 -- =========================================================
--- 8. Prompt 模板表：4 种问答风格
+-- 8. Prompt 模板表
 -- =========================================================
 INSERT INTO prompt_templates (id, name, description, template, is_default, created_at, updated_at)
 VALUES
@@ -255,7 +209,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = NOW();
 
 -- =========================================================
--- 9. 模型配置表：4 个演示配置
+-- 9. 模型配置表
 -- =========================================================
 INSERT INTO model_configs (id, provider, base_url, model_name, model_type, is_active, created_at, updated_at)
 VALUES
@@ -272,13 +226,11 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = NOW();
 
 -- =========================================================
--- 10. 问答反馈表：4 条反馈
+-- 10. 问答反馈表
 -- =========================================================
 INSERT INTO question_feedbacks (id, message_id, rating, comment, created_at)
 VALUES
     (1001, 601, 'like', '回答清楚，年假和病假的区别解释得很明确。', NOW()),
-    (1002, 602, 'dislike', '希望再补充一下发票丢失时怎么处理。', NOW()),
-    (1003, 603, 'like', '入职材料列得很完整，前端展示效果也好。', NOW()),
     (1004, 604, 'dislike', '建议补充未审批直接远程办公的风险提示。', NOW())
 ON CONFLICT (id) DO UPDATE SET
     message_id = EXCLUDED.message_id,
@@ -286,13 +238,11 @@ ON CONFLICT (id) DO UPDATE SET
     comment = EXCLUDED.comment;
 
 -- =========================================================
--- 11. 评测用例表：4 道标准题
+-- 11. 评测用例表
 -- =========================================================
 INSERT INTO evaluation_cases (id, knowledge_base_id, question, expected_answer, created_at)
 VALUES
     (1101, 201, '年假需要提前多久申请？', '员工申请年假需至少提前 3 个工作日提交审批。', NOW()),
-    (1102, 202, '差旅报销最晚多久内提交？', '差旅报销需在行程结束后 10 个自然日内提交。', NOW()),
-    (1103, 203, '入职第一天需要准备哪些材料？', '需要携带身份证、学历证明、银行卡信息和一寸照片。', NOW()),
     (1104, 204, '远程办公是否需要主管审批？', '需要至少提前 1 天提交申请，并获得直属主管审批。', NOW())
 ON CONFLICT (id) DO UPDATE SET
     knowledge_base_id = EXCLUDED.knowledge_base_id,
@@ -300,13 +250,11 @@ ON CONFLICT (id) DO UPDATE SET
     expected_answer = EXCLUDED.expected_answer;
 
 -- =========================================================
--- 12. 评测结果表：4 次评测记录
+-- 12. 评测结果表
 -- =========================================================
 INSERT INTO evaluation_runs (id, knowledge_base_id, case_count, avg_score, created_at)
 VALUES
     (1201, 201, 1, 0.96, NOW()),
-    (1202, 202, 1, 0.89, NOW()),
-    (1203, 203, 1, 0.94, NOW()),
     (1204, 204, 1, 0.91, NOW())
 ON CONFLICT (id) DO UPDATE SET
     knowledge_base_id = EXCLUDED.knowledge_base_id,
@@ -314,7 +262,19 @@ ON CONFLICT (id) DO UPDATE SET
     avg_score = EXCLUDED.avg_score;
 
 -- =========================================================
--- 13. 调整自增序列，避免后续插入撞上手工 ID
+-- 13. 清理已删除知识库遗留的评测/反馈孤立行（若有）
+-- =========================================================
+DELETE FROM evaluation_cases WHERE knowledge_base_id IN (202, 203);
+DELETE FROM evaluation_runs WHERE knowledge_base_id IN (202, 203);
+DELETE FROM documents WHERE id IN (302, 303);
+DELETE FROM document_chunks WHERE id IN (402, 403);
+DELETE FROM chat_sessions WHERE id IN (502, 503);
+DELETE FROM chat_messages WHERE id IN (602, 603);
+DELETE FROM chat_references WHERE id IN (702, 703);
+DELETE FROM question_feedbacks WHERE id IN (1002, 1003);
+
+-- =========================================================
+-- 14. 调整自增序列
 -- =========================================================
 SELECT setval(pg_get_serial_sequence('users', 'id'), (SELECT GREATEST(COALESCE(MAX(id), 1), 1) FROM users), true);
 SELECT setval(pg_get_serial_sequence('knowledge_bases', 'id'), (SELECT GREATEST(COALESCE(MAX(id), 1), 1) FROM knowledge_bases), true);

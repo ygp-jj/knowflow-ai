@@ -76,12 +76,12 @@ def ask(
     current_user: User = Depends(get_current_user),
 ):
     """单次知识库问答：完整 JSON（非流式兜底）。"""
-    _ = current_user
     try:
         result: ChatAskRead = ask_knowledge_base(
             db,
             knowledge_base_id=payload.knowledge_base_id,
             question=payload.question,
+            owner_id=current_user.id,
         )
     except RagServiceError as exc:
         return error_response(exc.http_code, str(exc))
@@ -100,7 +100,6 @@ def ask_stream(
     current_user: User = Depends(get_current_user),
 ):
     """无会话流式问答（SSE）。"""
-    _ = current_user
 
     def event_generator() -> Iterator[str]:
         try:
@@ -108,6 +107,7 @@ def ask_stream(
                 db,
                 knowledge_base_id=payload.knowledge_base_id,
                 question=payload.question,
+                owner_id=current_user.id,
             ):
                 yield _format_sse(item)
         except RagServiceError as exc:

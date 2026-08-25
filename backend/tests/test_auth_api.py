@@ -98,6 +98,72 @@ class AuthApiTests(unittest.TestCase):
         response = self.client.get("/api/v1/knowledge-bases/list")
         self.assertEqual(response.status_code, 401)
 
+    def test_register_success_auto_login(self):
+        """注册成功后直接返回 token，可访问 /me。"""
+        response = self.client.post(
+            "/api/v1/auth/register",
+            json={
+                "username": "newbie",
+                "email": "newbie@example.com",
+                "password": "demo123456",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["code"], 0)
+        token = body["data"]["access_token"]
+        self.assertEqual(body["data"]["user"]["username"], "newbie")
+        me = self.client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        self.assertEqual(me.json()["data"]["email"], "newbie@example.com")
+
+    def test_register_duplicate_username(self):
+        """重复用户名返回 code=400。"""
+        response = self.client.post(
+            "/api/v1/auth/register",
+            json={
+                "username": "hr_admin",
+                "email": "another@example.com",
+                "password": "demo123456",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["code"], 400)
+        self.assertEqual(body["message"], "用户名已存在")
+
+    def test_register_duplicate_email(self):
+        """重复邮箱返回 code=400。"""
+        response = self.client.post(
+            "/api/v1/auth/register",
+            json={
+                "username": "other_user",
+                "email": "hr_admin@knowflow.ai",
+                "password": "demo123456",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["code"], 400)
+        self.assertEqual(body["message"], "邮箱已存在")
+
+    def test_register_chinese_username(self):
+        """中文用户名可注册成功。"""
+        response = self.client.post(
+            "/api/v1/auth/register",
+            json={
+                "username": "聪明鸭",
+                "email": "smart_duck@example.com",
+                "password": "123456",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["code"], 0)
+        self.assertEqual(body["data"]["user"]["username"], "聪明鸭")
+
 
 if __name__ == "__main__":
     unittest.main()

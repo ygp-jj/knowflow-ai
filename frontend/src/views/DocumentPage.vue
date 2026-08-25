@@ -303,8 +303,8 @@ async function loadDocumentList(filters = {}) {
 
     items.value = result.items || [];
     total.value = result.total || 0;
-    page.value = result.page || params.page;
-    pageSize.value = result.page_size || params.pageSize;
+    page.value = Number(result.page) || params.page;
+    pageSize.value = Number(result.page_size) || params.pageSize;
   } finally {
     listLoading.value = false;
   }
@@ -656,10 +656,15 @@ function handleDelete(record) {
  * @returns {Promise<void>}
  */
 async function handleTableChange(pager) {
-  /** 目标页码。 */
-  const nextPage = pager.current;
+  // 列表加载中忽略 Table 因 dataSource 回写触发的二次 change，避免整页反复刷请求。
+  if (listLoading.value) {
+    return;
+  }
+
+  /** 目标页码（缺省时沿用当前页，避免 undefined 误触发重载）。 */
+  const nextPage = Number(pager?.current) || page.value;
   /** 目标分页大小。 */
-  const nextPageSize = pager.pageSize;
+  const nextPageSize = Number(pager?.pageSize) || pageSize.value;
 
   // 分页配置回写后 Table 可能再次触发 change，页码未变则跳过，避免重复请求。
   if (nextPage === page.value && nextPageSize === pageSize.value) {

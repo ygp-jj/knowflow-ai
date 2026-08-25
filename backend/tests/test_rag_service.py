@@ -82,6 +82,23 @@ class RagServiceTests(unittest.TestCase):
         self.assertEqual(ctx.exception.http_code, 404)
         db.close()
 
+    def test_kb_owner_mismatch(self):
+        """传入 owner_id 时不可检索他人知识库。"""
+        db = self.SessionLocal()
+        with self.assertRaises(RagServiceError) as ctx:
+            ask_knowledge_base(
+                db,
+                knowledge_base_id=1,
+                question="请假找谁",
+                embedding_service=MagicMock(),
+                milvus_service=MagicMock(),
+                llm_service=MagicMock(),
+                owner_id=999,
+            )
+        self.assertEqual(ctx.exception.http_code, 404)
+        self.assertIn("不存在", str(ctx.exception))
+        db.close()
+
     def test_no_hit_returns_friendly_answer(self):
         db = self.SessionLocal()
         embedder = MagicMock()

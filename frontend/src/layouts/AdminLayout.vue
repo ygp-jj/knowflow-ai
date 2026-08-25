@@ -50,7 +50,13 @@
           <h1 class="admin-layout__title">{{ currentTitle }}</h1>
         </div>
         <div class="admin-layout__header-actions">
-          <ATag color="blue">{{ displayName }}</ATag>
+          <div class="admin-layout__user" :title="userEmail || undefined">
+            <span class="admin-layout__user-label">用户名</span>
+            <strong class="admin-layout__user-name">{{ displayName }}</strong>
+            <span v-if="userEmail && userEmail !== displayName" class="admin-layout__user-email">
+              {{ userEmail }}
+            </span>
+          </div>
           <AButton type="default" @click="handleLogout">退出登录</AButton>
           <AButton type="text" class="admin-layout__toggle" @click="toggleCollapsed">
             <MenuFoldOutlined v-if="!collapsed" />
@@ -68,7 +74,7 @@
 
 <script setup>
 /** 功能：提供后台通用布局、左侧导航和顶部标题区域。 */
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { RouterView, useRoute, useRouter } from 'vue-router';
 import {
   DatabaseOutlined,
@@ -77,10 +83,13 @@ import {
   MenuUnfoldOutlined,
   MessageOutlined,
 } from '@ant-design/icons-vue';
-import { clearAuthStorage, getCachedUser } from '@/stores/auth';
+import { fetchMe } from '@/services/auth-service';
+import { clearAuthStorage, getCachedUser, setCachedUser } from '@/stores/auth';
 
 /** 是否折叠侧边栏。 */
 const collapsed = ref(false);
+/** 当前登录用户（顶栏展示用）。 */
+const currentUser = ref(getCachedUser());
 /** 当前路由对象。 */
 const route = useRoute();
 /** 路由实例。 */
@@ -90,7 +99,21 @@ const router = useRouter();
 const currentTitle = computed(() => route.meta?.title || '管理台');
 
 /** 顶栏展示的用户名。 */
-const displayName = computed(() => getCachedUser()?.username || '已登录');
+const displayName = computed(() => currentUser.value?.username || '已登录');
+
+/** 顶栏展示的邮箱（与用户名不同时才显示）。 */
+const userEmail = computed(() => currentUser.value?.email || '');
+
+onMounted(async () => {
+  try {
+    /** 从服务端拉取最新用户信息，避免本地缓存缺字段。 */
+    const me = await fetchMe();
+    currentUser.value = me;
+    setCachedUser(me);
+  } catch {
+    currentUser.value = getCachedUser();
+  }
+});
 
 /**
  * 切换侧边栏折叠状态。
@@ -211,6 +234,41 @@ function handleLogout() {
   display: flex;
   gap: 12px;
   align-items: center;
+}
+
+.admin-layout__user {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  max-width: 240px;
+  padding: 8px 12px;
+  border: 1px solid rgba(37, 99, 235, 0.25);
+  border-radius: 12px;
+  background: rgba(239, 246, 255, 0.9);
+  line-height: 1.2;
+}
+
+.admin-layout__user-label {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.admin-layout__user-name {
+  overflow: hidden;
+  color: #1d4ed8;
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-layout__user-email {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .admin-layout__toggle {

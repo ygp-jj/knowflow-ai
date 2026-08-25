@@ -83,13 +83,14 @@ function handleClick() {
 
 - `POST /api/v1/auth/login`：`{ username, password }` → `{ access_token, token_type, user }`。
 - `GET /api/v1/auth/me`：需 Bearer，返回当前用户。
-- 演示账号：`hr_admin` / `demo123456`（seed 中 4 用户密码统一，bcrypt）。
+- 演示账号：仅 `hr_admin` / `demo123456`（bcrypt）。
+- 公开接口另含：`POST /api/v1/auth/register`（注册成功直接返回 token，自动登录）。
 - 配置：`JWT_SECRET_KEY` / `JWT_ALGORITHM` / `JWT_EXPIRE_MINUTES`（默认 7 天）。
-- 设计说明：`backend/docs/2026-08-24-auth-login-design.md`
+- 设计说明：`backend/docs/2026-08-24-auth-login-design.md`、`backend/docs/2026-08-24-auth-register-design.md`
 
 ## 后端文档管理接口约定
 
-- 第一版文档管理采用与知识库管理一致的接口风格，URL 中不要写动态参数。
+- 文档列表 / 详情 / 增删改 / 切片 / 向量化 / 下载：仅当前用户知识库下的文档可见可操作。
 - 文档创建接口使用 `multipart/form-data`，前端通过 `knowledge_base_id` 和 `file` 上传文档。
 - 文档管理接口路径固定为：
   - `POST /api/v1/documents/create`
@@ -102,6 +103,7 @@ function handleClick() {
   - `POST /api/v1/documents/chunk`（请求体 `{ "id": 1 }`，手动触发解析切片）
 - 文档列表支持可选 `knowledge_base_id` 过滤，并返回分页结构 `items`、`total`、`page`、`page_size`。
 - 文档统一响应格式为 `{ "code": 0, "message": "success", "data": ... }`，错误时 `data` 返回 `null`。
+- **文档归属**：仅当前 JWT 用户自己的知识库下文档可见/可操作（列表、详情、切片、向量化、下载、删除均按 `knowledge_bases.owner_id` 隔离）。
 - 文档文件在开发阶段直接存入本地 Docker 启动的 MinIO。
 - 删除文档时必须同时删除数据库记录和 MinIO 对象。
 - 下载文档时通过后端下载接口返回文件流，不直接暴露 MinIO 真实对象地址。
@@ -130,6 +132,7 @@ function handleClick() {
   - 标题：默认「新会话」；仅默认值可被首问自动截断覆盖；支持 `sessions/update` 手动改名。
   - 历史：最近 `CHAT_HISTORY_MAX_MESSAGES`（默认 10）条，再受 `CHAT_HISTORY_MAX_CHARS`（默认 4000）截断；检索上下文仍用 `RAG_MAX_CONTEXT_CHARS`。
 - 流程：问题 Embedding → Milvus Top-K（按知识库过滤）→ 父子块扩展 → 拼上下文 → DeepSeek 生成。
+- **知识库归属**：`/ask`、`/ask-stream` 与会话提问均按 JWT 用户校验知识库 `owner_id`，不可检索他人知识库。
 - 非流式统一响应 `{ "code": 0, "message": "success", "data": { "answer", "question", "knowledge_base_id", "references" } }`。
 - 无命中时友好提示；流式同样先推空 references 再推提示文本。
 - 参数：`RAG_TOP_K` / `RAG_SCORE_THRESHOLD` / `RAG_MAX_CONTEXT_CHARS` / `CHAT_HISTORY_MAX_CHARS` / `CHAT_HISTORY_MAX_MESSAGES`。

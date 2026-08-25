@@ -75,9 +75,17 @@ class RetrievalBundle:
     context: str | None = None
 
 
-def _get_knowledge_base(db: Session, knowledge_base_id: int) -> KnowledgeBase | None:
-    """按 id 查询知识库（问答第一版不校验 owner）。"""
-    return db.query(KnowledgeBase).filter(KnowledgeBase.id == knowledge_base_id).first()
+def _get_knowledge_base(
+    db: Session,
+    knowledge_base_id: int,
+    *,
+    owner_id: int | None = None,
+) -> KnowledgeBase | None:
+    """按 id 查询知识库；传入 owner_id 时校验归属。"""
+    query = db.query(KnowledgeBase).filter(KnowledgeBase.id == knowledge_base_id)
+    if owner_id is not None:
+        query = query.filter(KnowledgeBase.owner_id == owner_id)
+    return query.first()
 
 
 def _build_context(chunks: list[DocumentChunk], max_chars: int) -> str:
@@ -134,16 +142,18 @@ def prepare_retrieval(
     top_k: int | None = None,
     score_threshold: float | None = None,
     max_context_chars: int | None = None,
+    owner_id: int | None = None,
 ) -> RetrievalBundle:
     """完成 Embed + Milvus + 扩块 + 拼 prompt，不调用 LLM。
 
     流式与非流式共用本函数，避免两套检索逻辑漂移。
+    传入 owner_id 时仅允许检索当前用户拥有的知识库。
     """
     question = (question or "").strip()
     if not question:
         raise RagServiceError("问题不能为空", http_code=400)
 
-    kb = _get_knowledge_base(db, knowledge_base_id)
+    kb = _get_knowledge_base(db, knowledge_base_id, owner_id=owner_id)
     if kb is None:
         raise RagServiceError("知识库不存在", http_code=404)
 
@@ -310,13 +320,14 @@ def iter_session_ask_events(
     # 2) 默认标题才自动改
     session_svc.maybe_auto_update_title(db, session, question)
 
-    # 3) 检索（用会话绑定的知识库）
+    # 3) 检索（用会话绑定的知识库，并校验归属）
     bundle = prepare_retrieval(
         db,
         knowledge_base_id=session.knowledge_base_id,
         question=question,
         embedding_service=embedding_service,
         milvus_service=milvus_service,
+        owner_id=user_id,
     )
 
     # 4) 历史：最近 N 条 + 字符截断
@@ -401,6 +412,7 @@ def ask_knowledge_base(
     top_k: int | None = None,
     score_threshold: float | None = None,
     max_context_chars: int | None = None,
+    owner_id: int | None = None,
 ) -> ChatAskRead:
     """对指定知识库执行单次问答（完整 JSON，非流式）。"""
     bundle = prepare_retrieval(
@@ -412,6 +424,7 @@ def ask_knowledge_base(
         top_k=top_k,
         score_threshold=score_threshold,
         max_context_chars=max_context_chars,
+        owner_id=owner_id,
     )
     if bundle.no_hit_answer is not None:
         return ChatAskRead(
@@ -442,6 +455,7 @@ def iter_ask_knowledge_base_events(
     top_k: int | None = None,
     score_threshold: float | None = None,
     max_context_chars: int | None = None,
+    owner_id: int | None = None,
 ) -> Iterator[dict]:
     """流式问答：产出前端可消费的事件字典。
 
@@ -460,6 +474,7 @@ def iter_ask_knowledge_base_events(
         top_k=top_k,
         score_threshold=score_threshold,
         max_context_chars=max_context_chars,
+        owner_id=owner_id,
     )
 
     if bundle.no_hit_answer is not None:

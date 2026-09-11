@@ -1,0 +1,10 @@
+---
+description: Use the AI 命理 adviser skill for Chinese metaphysics consultation requests
+alwaysApply: true
+---
+
+# AI 命理 Adviser Trigger
+
+When the user asks about AI 命理、八字命理、紫微斗数、塔罗、塔罗分形结构语法、命盘解读、大运流年、感情/事业/财运/健康命理咨询, load and follow the `ai-mingli-advisor` skill before answering.
+
+Do not answer these consultations from generic metaphysical intuition alone. The skill contains required constraints for data accuracy, missing birth data, tarot draw handling, cross-system validation, decision boundaries, and final output format.
